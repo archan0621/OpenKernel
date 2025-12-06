@@ -1,29 +1,39 @@
 ; src/boot.asm
-; Mutli boot header & Kernel main method
+; Multiboot2 header & kernel entry
 
 [bits 32]
 [extern kernel_main]
 
-MULTIBOOT_MAGIC equ 0x1BADB002
-MULTIBOOT_FLAGS equ 0x0
-MULTIBOOT_CHECKSUM equ -(MULTIBOOT_MAGIC + MULTIBOOT_FLAGS)
+MULTIBOOT2_MAGIC         equ 0xE85250D6
+MULTIBOOT2_ARCH          equ 0
+MULTIBOOT2_HEADER_LENGTH equ multiboot2_header_end - multiboot2_header_start
+MULTIBOOT2_CHECKSUM      equ -(MULTIBOOT2_MAGIC + MULTIBOOT2_ARCH + MULTIBOOT2_HEADER_LENGTH)
 
 section .multiboot
-align 4 
-  dd MULTIBOOT_MAGIC
-  dd MULTIBOOT_FLAGS
-  dd MULTIBOOT_CHECKSUM
+align 8
+multiboot2_header_start:
+    dd MULTIBOOT2_MAGIC
+    dd MULTIBOOT2_ARCH
+    dd MULTIBOOT2_HEADER_LENGTH
+    dd MULTIBOOT2_CHECKSUM
 
+    dw 0          ; type
+    dw 0          ; flags
+    dd 8          ; size
+multiboot2_header_end:
 
 section .text
 global _start
 _start:
-  ; Start stack from 0x900000
-  mov esp, 0x900000
+    ; 스택 설정
+    mov esp, 0x900000
 
-  call kernel_main
+    push ebx        ; mb_info
+    push eax        ; magic
+
+    call kernel_main
 
 .hang:
-  cli
-  hlt
-  jmp .hang 
+    cli
+    hlt
+    jmp .hang
