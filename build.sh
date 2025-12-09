@@ -16,7 +16,7 @@ nasm -f elf32 src/boot.asm -o build/boot.o
 x86_64-elf-gcc -m32 -ffreestanding -O2 -Iinclude -c src/kernel.c -o build/kernel.o
 
 # 3) video.c to object
-x86_64-elf-gcc -m32 -ffreestanding -O2 -Iinclude -c video/video.c -o build/video.o
+x86_64-elf-gcc -m32 -ffreestanding -O2 -Iinclude -c src/drivers/video/video.c -o build/video.o
 
 # 4) link 
 x86_64-elf-ld -m elf_i386 -T linker.ld -o build/kernel.elf build/boot.o build/kernel.o build/video.o

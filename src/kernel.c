@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "video.h"
+#include "drivers/video/video.h"
 
 #define MB2_MAGIC 0x36d76289
 

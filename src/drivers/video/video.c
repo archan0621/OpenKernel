@@ -1,4 +1,4 @@
-#include "video.h"
+#include "drivers/video/video.h"
 
 static struct multiboot_tag_framebuffer* g_fb = 0;
 static int g_use_vga_text = 0;
