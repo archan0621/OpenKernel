@@ -23,5 +23,6 @@ struct multiboot_tag_framebuffer {
 };
 
 void video_init(void* mbinfo);
-void video_print_char();
+void video_clear_screen(void);
+void video_draw_char(int cx, int cy, char c);
 
