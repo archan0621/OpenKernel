@@ -11,7 +11,7 @@ struct gdt_entry {
     uint8_t base_high; // base [24:31]
 } __attribute__((packed)); // do not add padding in struct
 
-// gdtr pointer sturct
+// gdtr pointer struct
 struct gdt_ptr {
     uint16_t limit; // gdt size
     uint32_t base; // gdt arr base address
