@@ -20,7 +20,7 @@ struct gdt_ptr {
 static struct gdt_entry gdt[3];
 static struct gdt_ptr gp;
 
-// extern implement from assembly
+// Implemented in assembly (see gdt_flush.asm)
 extern void gdt_flush(uint32_t);
 
 // gdt_entry constructor
