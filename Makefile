@@ -49,7 +49,7 @@ all: $(ISO)
 $(ISO): $(KERNEL_BIN) $(GRUB_DIR)/grub.cfg | $(ISO_DIR)
 	@echo "Creating ISO image..."
 	$(GRUB_MKRESCUE) -o $(ISO) $(ISO_DIR)
-	@echo "✅ $(ISO) 생성 완료"
+	@echo "✅ ISO image $(ISO) created successfully"
 
 # Copy kernel binary to ISO directory
 $(KERNEL_BIN): $(KERNEL_ELF) | $(ISO_DIR)/boot
