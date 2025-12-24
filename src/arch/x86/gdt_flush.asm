@@ -5,7 +5,7 @@ global gdt_flush
 gdt_flush:
     mov eax, [esp + 4]   ; param gdt_ptr address
 
-    lgdt [eax]           ; load at gdtr
+    lgdt [eax]           ; load into GDTR
 
     ; segment selector : index 1(code) -> 1 * 8 = 0x08
     ;                  index 2(data) -> 2 * 8 = 0x10
