@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "drivers/console/console.h"
+#include "arch/x86/gdt.h"
 
 #define MB2_MAGIC 0x36d76289
 
@@ -11,11 +12,12 @@ void kernel_main(uint32_t magic, void* mbinfo) {
     if (magic != MB2_MAGIC)
         hlt_loop();
 
-    // Initialize console
+    // Initialize console first (needed for GDT verification output)
     console_init(mbinfo);
-    
-    // Test: Clear screen
     console_clear();
+    
+    // Initialize GDT (will print "GDT OK" if successful)
+    gdt_init();
     
     // Test: Put string
     console_puts("Hello World!\n");
