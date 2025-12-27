@@ -109,3 +109,53 @@ void video_draw_char(int cx, int cy, char c) {
         }
     }
 }
+
+// Scroll screen up by one line
+void video_scroll_up(void) {
+    if (g_use_vga_text) {
+        // VGA text mode: copy lines 1-24 to 0-23, clear line 24
+        volatile uint16_t* vga = (volatile uint16_t*)0xB8000;
+        for (int y = 0; y < 24; y++) {
+            for (int x = 0; x < 80; x++) {
+                vga[y * 80 + x] = vga[(y + 1) * 80 + x];
+            }
+        }
+        // Clear last line
+        for (int x = 0; x < 80; x++) {
+            vga[24 * 80 + x] = 0x0000;
+        }
+    } else {
+        // Framebuffer mode
+        if (!g_fb || g_fb->framebuffer_bpp != 32)
+            return;
+
+        uint32_t width  = g_fb->framebuffer_width;
+        uint32_t height = g_fb->framebuffer_height;
+        uint32_t pitch  = g_fb->framebuffer_pitch;
+        uint32_t* buffer = (uint32_t*)(uintptr_t)g_fb->framebuffer_addr;
+        uint32_t line_height = FONT8X16_HEIGHT;
+        uint32_t chars_per_line = width / FONT8X16_WIDTH;
+        uint32_t lines_per_screen = height / line_height;
+
+        // Copy lines 1 to (lines_per_screen-1) to lines 0 to (lines_per_screen-2)
+        for (uint32_t line = 0; line < lines_per_screen - 1; line++) {
+            uint32_t src_y = (line + 1) * line_height;
+            uint32_t dst_y = line * line_height;
+            for (uint32_t row = 0; row < line_height; row++) {
+                uint32_t* src_row = (uint32_t*)((uint8_t*)buffer + pitch * (src_y + row));
+                uint32_t* dst_row = (uint32_t*)((uint8_t*)buffer + pitch * (dst_y + row));
+                for (uint32_t x = 0; x < width; x++) {
+                    dst_row[x] = src_row[x];
+                }
+            }
+        }
+        // Clear last line
+        uint32_t last_line_y = (lines_per_screen - 1) * line_height;
+        for (uint32_t row = 0; row < line_height; row++) {
+            uint32_t* last_row = (uint32_t*)((uint8_t*)buffer + pitch * (last_line_y + row));
+            for (uint32_t x = 0; x < width; x++) {
+                last_row[x] = 0xFF000000; // black
+            }
+        }
+    }
+}

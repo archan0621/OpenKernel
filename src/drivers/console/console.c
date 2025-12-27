@@ -33,10 +33,6 @@ void console_clear(void) {
 
 // Put a single character
 void console_putc(char c) {
-    // Check if cursor is out of bounds
-    if (g_cursor_y >= g_console_height)
-        return;
-    
     if (c == '\n') {
         // Newline: move to next line
         g_cursor_x = 0;
@@ -63,6 +59,12 @@ void console_putc(char c) {
             g_cursor_x = 0;
             g_cursor_y++;
         }
+    }
+    
+    // Scroll if cursor goes beyond screen
+    if (g_cursor_y >= g_console_height) {
+        video_scroll_up();
+        g_cursor_y = g_console_height - 1;
     }
 }
 
