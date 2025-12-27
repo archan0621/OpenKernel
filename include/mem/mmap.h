@@ -1,8 +1,4 @@
-//
-// Created by 박종하 on 2025. 12. 24..
-//
+#pragma once
+#include <stdint.h>
 
-#ifndef OPENKERNEL_MMAP_H
-#define OPENKERNEL_MMAP_H
-
-#endif //OPENKERNEL_MMAP_H
+void mmap_dump(uint32_t magic, void* mbinfo);
