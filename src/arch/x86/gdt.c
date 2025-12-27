@@ -1,5 +1,4 @@
 #include "arch/x86/gdt.h"
-#include "drivers/console/console.h"
 
 // gdt entry 8byte
 struct gdt_entry {
@@ -11,7 +10,7 @@ struct gdt_entry {
     uint8_t base_high; // base [24:31]
 } __attribute__((packed)); // do not add padding in struct
 
-// gdtr pointer struct
+// gdtr pointer sturct
 struct gdt_ptr {
     uint16_t limit; // gdt size
     uint32_t base; // gdt arr base address
@@ -20,7 +19,7 @@ struct gdt_ptr {
 static struct gdt_entry gdt[3];
 static struct gdt_ptr gp;
 
-// Implemented in assembly (see gdt_flush.asm)
+// extern implement from assembly
 extern void gdt_flush(uint32_t);
 
 // gdt_entry constructor
@@ -62,17 +61,4 @@ void gdt_init(void) {
 
     // flush gdt info to cpu
     gdt_flush((uint32_t)&gp);
-    
-    // Verify GDT base is not zero
-    struct gdt_ptr_dump {
-        uint16_t limit;
-        uint32_t base;
-    } __attribute__((packed));
-    
-    struct gdt_ptr_dump gdtr;
-    __asm__ __volatile__("sgdt %0" : "=m"(gdtr));
-    
-    if (gdtr.base != 0) {
-        console_puts("GDT OK\n");
-    }
 }
