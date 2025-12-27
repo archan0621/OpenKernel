@@ -24,6 +24,12 @@ FONT_SRC = src/font/font8x16.c
 CONSOLE_SRC = src/drivers/console/console.c
 GDT_SRC = src/arch/x86/gdt.c
 GDT_FLUSH_SRC = src/arch/x86/gdt_flush.asm
+IDT_SRC = src/arch/x86/idt.c
+IDT_FLUSH_SRC = src/arch/x86/idt_flush.asm
+ISR_SRC = src/arch/x86/isr.asm
+IRQ_SRC = src/arch/x86/irq.asm
+MMAP_SRC = src/mem/mmap.c
+PMM_SRC = src/mem/pmm.c
 
 # Object files
 BOOT_OBJ = $(BUILD_DIR)/boot.o
@@ -33,9 +39,15 @@ FONT_OBJ = $(BUILD_DIR)/font8x16.o
 CONSOLE_OBJ = $(BUILD_DIR)/console.o
 GDT_OBJ = $(BUILD_DIR)/gdt.o
 GDT_FLUSH_OBJ = $(BUILD_DIR)/gdt_flush.o
+IDT_OBJ = $(BUILD_DIR)/idt.o
+IDT_FLUSH_OBJ = $(BUILD_DIR)/idt_flush.o
+ISR_OBJ = $(BUILD_DIR)/isr.o
+IRQ_OBJ = $(BUILD_DIR)/irq.o
+MMAP_OBJ = $(BUILD_DIR)/mmap.o
+PMM_OBJ = $(BUILD_DIR)/pmm.o
 
 # All object files
-OBJS = $(BOOT_OBJ) $(KERNEL_OBJ) $(VIDEO_OBJ) $(FONT_OBJ) $(CONSOLE_OBJ) $(GDT_OBJ) $(GDT_FLUSH_OBJ)
+OBJS = $(BOOT_OBJ) $(KERNEL_OBJ) $(VIDEO_OBJ) $(FONT_OBJ) $(CONSOLE_OBJ) $(GDT_OBJ) $(GDT_FLUSH_OBJ) $(IDT_OBJ) $(IDT_FLUSH_OBJ) $(ISR_OBJ) $(IRQ_OBJ) $(MMAP_OBJ) $(PMM_OBJ)
 
 # Output files
 KERNEL_ELF = $(BUILD_DIR)/kernel.elf
@@ -112,6 +124,42 @@ $(GDT_FLUSH_OBJ): $(GDT_FLUSH_SRC)
 	@mkdir -p $(BUILD_DIR)
 	@echo "Compiling GDT flush..."
 	$(NASM) $(NASMFLAGS) $(GDT_FLUSH_SRC) -o $(GDT_FLUSH_OBJ)
+
+# Compile IDT
+$(IDT_OBJ): $(IDT_SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling IDT..."
+	$(CC) $(CFLAGS) -c $(IDT_SRC) -o $(IDT_OBJ)
+
+# Compile IDT flush (assembly)
+$(IDT_FLUSH_OBJ): $(IDT_FLUSH_SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling IDT flush..."
+	$(NASM) $(NASMFLAGS) $(IDT_FLUSH_SRC) -o $(IDT_FLUSH_OBJ)
+
+# Compile ISR (assembly)
+$(ISR_OBJ): $(ISR_SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling ISR..."
+	$(NASM) $(NASMFLAGS) $(ISR_SRC) -o $(ISR_OBJ)
+
+# Compile IRQ (assembly)
+$(IRQ_OBJ): $(IRQ_SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling IRQ..."
+	$(NASM) $(NASMFLAGS) $(IRQ_SRC) -o $(IRQ_OBJ)
+
+# Compile MMAP
+$(MMAP_OBJ): $(MMAP_SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling MMAP..."
+	$(CC) $(CFLAGS) -c $(MMAP_SRC) -o $(MMAP_OBJ)
+
+# Compile PMM
+$(PMM_OBJ): $(PMM_SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling PMM..."
+	$(CC) $(CFLAGS) -c $(PMM_SRC) -o $(PMM_OBJ)
 
 # Clean build artifacts
 clean:
