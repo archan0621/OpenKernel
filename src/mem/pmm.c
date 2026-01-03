@@ -108,7 +108,9 @@ void pmm_init(uint32_t magic, void* mbinfo) {
     uint8_t* p = start;
     uint32_t entry_count = 0;
     
-    while (p < end && entry_count < 64) {
+    // Process all memory map entries, bounded by 'end' pointer
+    // No arbitrary limit - rely on bounds checking against 'end'
+    while (p < end) {
         if (p + sizeof(struct multiboot_mmap_entry) > end) {
             break;
         }
@@ -141,7 +143,18 @@ void pmm_init(uint32_t magic, void* mbinfo) {
         entry_count++;
     }
 
-    console_puts("[PMM] Memory scan complete\n");
+    console_puts("[PMM] Memory scan complete (");
+    if (entry_count > 0) {
+        uint32_t ec = entry_count;
+        char buf[12];
+        int idx = 0;
+        while (ec > 0 && idx < 11) {
+            buf[idx++] = (char)('0' + (ec % 10));
+            ec /= 10;
+        }
+        while (idx--) console_putc(buf[idx]);
+    }
+    console_puts(" entries processed)\n");
     
     if (min_addr == 0xFFFFFFFFFFFFFFFFULL || max_addr == 0) {
         console_puts("[PMM] No usable memory found\n");
@@ -243,7 +256,9 @@ void pmm_init(uint32_t magic, void* mbinfo) {
     uint32_t memory_start_32 = (uint32_t)memory_start;
     uint32_t memory_end_32 = (uint32_t)memory_end;
     
-    while (p < end && entry_count < 64) {
+    // Process all memory map entries, bounded by 'end' pointer
+    // No arbitrary limit - rely on bounds checking against 'end'
+    while (p < end) {
         if (p + sizeof(struct multiboot_mmap_entry) > end) {
             break;
         }
