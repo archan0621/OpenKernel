@@ -1,5 +1,10 @@
 #include "arch/x86/idt.h"
 #include "drivers/console/console.h"
+#include <stdint.h>
+
+// Linker symbols (from linker.ld)
+extern uint32_t kernel_start;
+extern uint32_t kernel_end;
 
 // IDT entry structure (8 bytes)
 struct idt_entry {
@@ -90,17 +95,197 @@ struct interrupt_frame {
     uint32_t useresp, ss;                 // User mode stack (if applicable)
 } __attribute__((packed));
 
-// Generic interrupt handler (called from assembly stubs)
-void idt_handler(struct interrupt_frame* frame) {
-    console_puts("[IDT] Exception occurred: ");
-    // Simple number output
-    if (frame->int_no < 10) {
-        console_putc('0' + frame->int_no);
+// Helper function to print hexadecimal number (always 8 digits)
+static void console_puthex32(uint32_t v) {
+    console_puts("0x");
+    for (int i = 7; i >= 0; i--) {
+        uint8_t nibble = (v >> (i * 4)) & 0xF;
+        if (nibble < 10) {
+            console_putc('0' + nibble);
+        } else {
+            console_putc('A' + (nibble - 10));
+        }
+    }
+}
+
+// Helper function to print hexadecimal byte (2 digits)
+static void console_puthex8(uint8_t v) {
+    uint8_t high = (v >> 4) & 0xF;
+    uint8_t low = v & 0xF;
+    if (high < 10) {
+        console_putc('0' + high);
     } else {
-        console_putc('0' + (frame->int_no / 10));
-        console_putc('0' + (frame->int_no % 10));
+        console_putc('A' + (high - 10));
+    }
+    if (low < 10) {
+        console_putc('0' + low);
+    } else {
+        console_putc('A' + (low - 10));
+    }
+}
+
+// Helper function to print decimal number
+static void console_putu32(uint32_t v) {
+    char buf[11];
+    int idx = 0;
+
+    if (v == 0) {
+        console_putc('0');
+        return;
+    }
+
+    while (v > 0 && idx < 10) {
+        buf[idx++] = (char)('0' + (v % 10));
+        v /= 10;
+    }
+
+    while (idx--) {
+        console_putc(buf[idx]);
+    }
+}
+
+// Helper function to dump instruction bytes at EIP
+static void dump_instruction_bytes(uint32_t eip) {
+    console_puts("[EXCEPTION] Instruction bytes at EIP: ");
+    
+    // Try to read 16 bytes (safely, checking if within kernel range)
+    uint8_t* code_ptr = (uint8_t*)eip;
+    int bytes_to_dump = 16;
+    
+    // Limit dump if outside kernel range
+    if (eip < (uint32_t)&kernel_start || eip >= (uint32_t)&kernel_end) {
+        bytes_to_dump = 8; // Only dump 8 bytes if outside kernel
+    }
+    
+    for (int i = 0; i < bytes_to_dump; i++) {
+        if (i > 0) console_putc(' ');
+        console_puthex8(code_ptr[i]);
     }
     console_puts("\n");
+}
+
+// Generic interrupt handler (called from assembly stubs)
+void idt_handler(struct interrupt_frame* frame) {
+    // Check if this is an exception (0-31) or IRQ (32+)
+    if (frame->int_no < 32) {
+        // Exception occurred - print detailed information
+        console_puts("\n========================================\n");
+        console_puts("[EXCEPTION] Exception occurred\n");
+        console_puts("========================================\n");
+        
+        // Exception number
+        console_puts("[EXCEPTION] Exception #");
+        console_putu32(frame->int_no);
+        console_puts("\n");
+        
+        // Error code (if available)
+        // Error code is valid for exceptions: 8, 10, 11, 12, 13, 14, 17
+        if (frame->int_no == 8 || frame->int_no == 10 || frame->int_no == 11 ||
+            frame->int_no == 12 || frame->int_no == 13 || frame->int_no == 14 ||
+            frame->int_no == 17) {
+            console_puts("[EXCEPTION] Error Code: ");
+            console_puthex32(frame->err_code);
+            console_puts("\n");
+        }
+        
+        // EIP (Instruction Pointer)
+        console_puts("[EXCEPTION] EIP: ");
+        console_puthex32(frame->eip);
+        
+        // Check if EIP is within kernel range
+        if (frame->eip >= (uint32_t)&kernel_start && frame->eip < (uint32_t)&kernel_end) {
+            console_puts(" [within kernel: ");
+            console_puthex32((uint32_t)&kernel_start);
+            console_puts(" - ");
+            console_puthex32((uint32_t)&kernel_end);
+            console_puts("]\n");
+        } else {
+            console_puts(" [OUTSIDE kernel range!]\n");
+            console_puts("[EXCEPTION] Kernel range: ");
+            console_puthex32((uint32_t)&kernel_start);
+            console_puts(" - ");
+            console_puthex32((uint32_t)&kernel_end);
+            console_puts("\n");
+        }
+        
+        // CS (Code Segment)
+        console_puts("[EXCEPTION] CS: ");
+        console_puthex32(frame->cs);
+        console_puts("\n");
+        
+        // EFLAGS
+        console_puts("[EXCEPTION] EFLAGS: ");
+        console_puthex32(frame->eflags);
+        console_puts("\n");
+        
+        // Stack pointer
+        // Note: frame->esp is the ESP value saved by pusha (before interrupt)
+        // Actual ESP at interrupt time can be calculated from frame pointer
+        uint32_t actual_esp;
+        __asm__ __volatile__("mov %%esp, %0" : "=r"(actual_esp));
+        console_puts("[EXCEPTION] ESP (actual): ");
+        console_puthex32(actual_esp);
+        console_puts(" (saved: ");
+        console_puthex32(frame->esp);
+        console_puts(")\n");
+        
+        // Base pointer
+        console_puts("[EXCEPTION] EBP: ");
+        console_puthex32(frame->ebp);
+        console_puts("\n");
+        
+        // General purpose registers
+        console_puts("[EXCEPTION] Registers:\n");
+        console_puts("  EAX: ");
+        console_puthex32(frame->eax);
+        console_puts("  EBX: ");
+        console_puthex32(frame->ebx);
+        console_puts("  ECX: ");
+        console_puthex32(frame->ecx);
+        console_puts("  EDX: ");
+        console_puthex32(frame->edx);
+        console_puts("\n");
+        console_puts("  ESI: ");
+        console_puthex32(frame->esi);
+        console_puts("  EDI: ");
+        console_puthex32(frame->edi);
+        console_puts("\n");
+        
+        // Segment registers
+        console_puts("[EXCEPTION] Segment registers:\n");
+        console_puts("  DS: ");
+        console_puthex32(frame->ds);
+        console_puts("  ES: ");
+        console_puthex32(frame->es);
+        console_puts("  FS: ");
+        console_puthex32(frame->fs);
+        console_puts("  GS: ");
+        console_puthex32(frame->gs);
+        console_puts("\n");
+        
+        // Dump instruction bytes at EIP
+        dump_instruction_bytes(frame->eip);
+        
+        console_puts("========================================\n");
+        console_puts("[EXCEPTION] System halted\n");
+        
+        // Halt the system
+        __asm__ __volatile__("cli");
+        for(;;) {
+            __asm__ __volatile__("hlt");
+        }
+    } else {
+        // IRQ - handle normally (this shouldn't happen in current code)
+        console_puts("[IDT] IRQ occurred: ");
+        uint8_t irq = frame->int_no - 32;
+        if (irq < 10) {
+            console_putc('0' + irq);
+        } else {
+            console_putc('0' + (irq / 10));
+            console_putc('0' + (irq % 10));
+        }
+        console_puts("\n");
+    }
 }
 
 // IRQ handler (called from assembly stubs)
