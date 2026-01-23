@@ -2,6 +2,7 @@
 #include "drivers/console/console.h"
 #include "mem/mmap.h"
 #include "mem/pmm.h"
+#include "mem/vmm.h"
 #include "arch/x86/gdt.h"
 #include "arch/x86/idt.h"
 
@@ -72,6 +73,32 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         console_puts("\n");
     } else {
         console_puts("[PMM] Failed to allocate pages\n");
+    }
+    
+    // Initialize VMM
+    console_puts("\n[VMM] Initializing Virtual Memory Manager...\n");
+    vmm_init();
+    
+    // Test: VMM 페이지 매핑
+    console_puts("[VMM] Testing page mapping...\n");
+    void* test_phys = pmm_alloc_page();
+    if (test_phys) {
+        void* test_virt = (void*)0xC0000000; // 높은 가상 주소에 매핑
+        if (vmm_map_page(vmm_get_current_page_dir(), test_virt, test_phys, VMM_WRITABLE)) {
+            console_puts("[VMM] Successfully mapped virtual address 0xC0000000\n");
+            
+            // 물리 주소 확인
+            void* mapped_phys = vmm_get_phys_addr(vmm_get_current_page_dir(), test_virt);
+            if (mapped_phys == test_phys) {
+                console_puts("[VMM] Physical address lookup successful\n");
+            }
+            
+            // 언매핑
+            if (vmm_unmap_page(vmm_get_current_page_dir(), test_virt)) {
+                console_puts("[VMM] Successfully unmapped page\n");
+            }
+        }
+        pmm_free_page(test_phys);
     }
     
     // Test: Put string

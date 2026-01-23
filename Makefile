@@ -8,7 +8,7 @@ GRUB_MKRESCUE = i686-elf-grub-mkrescue
 
 # Flags
 NASMFLAGS = -f elf32
-CFLAGS = -m32 -ffreestanding -O2 -Iinclude
+CFLAGS = -m32 -ffreestanding -O2 -Iinclude -mno-sse -mno-sse2 -mno-mmx
 LDFLAGS = -m elf_i386 -T linker.ld
 
 # Directories
@@ -30,6 +30,8 @@ ISR_SRC = src/arch/x86/isr.asm
 IRQ_SRC = src/arch/x86/irq.asm
 MMAP_SRC = src/mem/mmap.c
 PMM_SRC = src/mem/pmm.c
+VMM_SRC = src/mem/vmm.c
+VMM_FLUSH_SRC = src/arch/x86/vmm_flush.asm
 
 # Object files
 BOOT_OBJ = $(BUILD_DIR)/boot.o
@@ -45,9 +47,11 @@ ISR_OBJ = $(BUILD_DIR)/isr.o
 IRQ_OBJ = $(BUILD_DIR)/irq.o
 MMAP_OBJ = $(BUILD_DIR)/mmap.o
 PMM_OBJ = $(BUILD_DIR)/pmm.o
+VMM_OBJ = $(BUILD_DIR)/vmm.o
+VMM_FLUSH_OBJ = $(BUILD_DIR)/vmm_flush.o
 
 # All object files
-OBJS = $(BOOT_OBJ) $(KERNEL_OBJ) $(VIDEO_OBJ) $(FONT_OBJ) $(CONSOLE_OBJ) $(GDT_OBJ) $(GDT_FLUSH_OBJ) $(IDT_OBJ) $(IDT_FLUSH_OBJ) $(ISR_OBJ) $(IRQ_OBJ) $(MMAP_OBJ) $(PMM_OBJ)
+OBJS = $(BOOT_OBJ) $(KERNEL_OBJ) $(VIDEO_OBJ) $(FONT_OBJ) $(CONSOLE_OBJ) $(GDT_OBJ) $(GDT_FLUSH_OBJ) $(IDT_OBJ) $(IDT_FLUSH_OBJ) $(ISR_OBJ) $(IRQ_OBJ) $(MMAP_OBJ) $(PMM_OBJ) $(VMM_OBJ) $(VMM_FLUSH_OBJ)
 
 # Output files
 KERNEL_ELF = $(BUILD_DIR)/kernel.elf
@@ -160,6 +164,18 @@ $(PMM_OBJ): $(PMM_SRC)
 	@mkdir -p $(BUILD_DIR)
 	@echo "Compiling PMM..."
 	$(CC) $(CFLAGS) -c $(PMM_SRC) -o $(PMM_OBJ)
+
+# Compile VMM
+$(VMM_OBJ): $(VMM_SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling VMM..."
+	$(CC) $(CFLAGS) -c $(VMM_SRC) -o $(VMM_OBJ)
+
+# Compile VMM flush (assembly)
+$(VMM_FLUSH_OBJ): $(VMM_FLUSH_SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling VMM flush..."
+	$(NASM) $(NASMFLAGS) $(VMM_FLUSH_SRC) -o $(VMM_FLUSH_OBJ)
 
 # Clean build artifacts
 clean:
