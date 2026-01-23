@@ -225,6 +225,15 @@ void pmm_init(uint32_t magic, void* mbinfo) {
     }
     console_puts("[PMM] Bitmap set to all used (0xFF)\n");
 
+    // 커널 영역을 명시적으로 사용 중으로 마킹
+    if (kernel_end_page > 0) {
+        console_puts("[PMM] Marking kernel region as used...\n");
+        for (uint32_t page_idx = (uint32_t)kernel_start_page; page_idx < (uint32_t)kernel_end_page && page_idx < total_pages; page_idx++) {
+            bitmap_set(page_idx);
+        }
+        console_puts("[PMM] Kernel region marked as used\n");
+    }
+
     console_puts("[PMM] Marking free pages...\n");
     
     free_pages = 0;
@@ -264,7 +273,9 @@ void pmm_init(uint32_t magic, void* mbinfo) {
                     uint32_t page_end = page_end_offset >> 12;
 
                     for (uint32_t page_idx = page_start; page_idx < page_end && page_idx < total_pages; page_idx++) {
-                        if (kernel_start_page > 0 && kernel_end_page > 0 && 
+                        // 커널 영역은 사용 중으로 마킹 (할당 불가)
+                        // kernel_start_page가 0일 수 있으므로 kernel_end_page만 체크
+                        if (kernel_end_page > 0 && 
                             page_idx >= (uint32_t)kernel_start_page && page_idx < (uint32_t)kernel_end_page) {
                             continue;
                         }
