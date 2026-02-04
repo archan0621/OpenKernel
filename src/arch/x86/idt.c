@@ -164,10 +164,151 @@ static void dump_instruction_bytes(uint32_t eip) {
     console_puts("\n");
 }
 
+// Page Fault handler (Exception #14)
+static void handle_page_fault(struct interrupt_frame* frame) {
+    // Read CR2 register (contains faulting virtual address)
+    uint32_t faulting_address;
+    __asm__ __volatile__("mov %%cr2, %0" : "=r"(faulting_address));
+    
+    console_puts("\n========================================\n");
+    console_puts("[PAGE FAULT] Exception #14\n");
+    console_puts("========================================\n");
+    
+    // Print faulting address
+    console_puts("[PAGE FAULT] Faulting virtual address: ");
+    console_puthex32(faulting_address);
+    console_puts("\n");
+    
+    // Print EIP where fault occurred
+    console_puts("[PAGE FAULT] Fault occurred at EIP: ");
+    console_puthex32(frame->eip);
+    console_puts("\n");
+    
+    // Parse error code
+    console_puts("[PAGE FAULT] Error code: ");
+    console_puthex32(frame->err_code);
+    console_puts(" (");
+    
+    // Bit 0: Present bit
+    if (frame->err_code & 0x1) {
+        console_puts("P");
+    } else {
+        console_puts("NP");
+    }
+    console_puts(" ");
+    
+    // Bit 1: Write/Read
+    if (frame->err_code & 0x2) {
+        console_puts("W");
+    } else {
+        console_puts("R");
+    }
+    console_puts(" ");
+    
+    // Bit 2: User/Supervisor
+    if (frame->err_code & 0x4) {
+        console_puts("U");
+    } else {
+        console_puts("S");
+    }
+    console_puts(" ");
+    
+    // Bit 3: Reserved bit violation
+    if (frame->err_code & 0x8) {
+        console_puts("RSVD");
+    }
+    
+    // Bit 4: Instruction fetch
+    if (frame->err_code & 0x10) {
+        console_puts(" I/F");
+    }
+    
+    console_puts(")\n");
+    
+    // Print human-readable reason
+    console_puts("[PAGE FAULT] Reason: ");
+    
+    // Access type
+    if (frame->err_code & 0x2) {
+        console_puts("write to ");
+    } else if (frame->err_code & 0x10) {
+        console_puts("instruction fetch from ");
+    } else {
+        console_puts("read from ");
+    }
+    
+    // Page present or not
+    if (frame->err_code & 0x1) {
+        console_puts("protected page ");
+    } else {
+        console_puts("non-present page ");
+    }
+    
+    // Privilege level
+    if (frame->err_code & 0x4) {
+        console_puts("in user mode");
+    } else {
+        console_puts("in kernel mode");
+    }
+    
+    // Reserved bit violation
+    if (frame->err_code & 0x8) {
+        console_puts(" (reserved bit violation)");
+    }
+    
+    console_puts("\n");
+    
+    // Additional register information
+    console_puts("[PAGE FAULT] CS: ");
+    console_puthex32(frame->cs);
+    console_puts(" EFLAGS: ");
+    console_puthex32(frame->eflags);
+    console_puts("\n");
+    
+    console_puts("[PAGE FAULT] Registers:\n");
+    console_puts("  EAX: ");
+    console_puthex32(frame->eax);
+    console_puts("  EBX: ");
+    console_puthex32(frame->ebx);
+    console_puts("  ECX: ");
+    console_puthex32(frame->ecx);
+    console_puts("  EDX: ");
+    console_puthex32(frame->edx);
+    console_puts("\n");
+    console_puts("  ESI: ");
+    console_puthex32(frame->esi);
+    console_puts("  EDI: ");
+    console_puthex32(frame->edi);
+    console_puts("  EBP: ");
+    console_puthex32(frame->ebp);
+    console_puts("  ESP: ");
+    console_puthex32(frame->esp);
+    console_puts("\n");
+    
+    // Dump instruction bytes at EIP
+    dump_instruction_bytes(frame->eip);
+    
+    console_puts("========================================\n");
+    console_puts("[PAGE FAULT] System halted - cannot recover\n");
+    console_puts("========================================\n");
+    
+    // Halt the system
+    __asm__ __volatile__("cli");
+    for(;;) {
+        __asm__ __volatile__("hlt");
+    }
+}
+
 // Generic interrupt handler (called from assembly stubs)
 void idt_handler(struct interrupt_frame* frame) {
     // Check if this is an exception (0-31) or IRQ (32+)
     if (frame->int_no < 32) {
+        // Handle Page Fault (Exception #14) specially
+        if (frame->int_no == 14) {
+            handle_page_fault(frame);
+            return; // Never returns, but for clarity
+        }
+        
         // Exception occurred - print detailed information
         console_puts("\n========================================\n");
         console_puts("[EXCEPTION] Exception occurred\n");
