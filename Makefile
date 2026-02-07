@@ -32,6 +32,7 @@ MMAP_SRC = src/mem/mmap.c
 PMM_SRC = src/mem/pmm.c
 VMM_SRC = src/mem/vmm.c
 VMM_FLUSH_SRC = src/arch/x86/vmm_flush.asm
+KMALLOC_SRC = src/mem/kmalloc.c
 
 # Object files
 BOOT_OBJ = $(BUILD_DIR)/boot.o
@@ -49,9 +50,10 @@ MMAP_OBJ = $(BUILD_DIR)/mmap.o
 PMM_OBJ = $(BUILD_DIR)/pmm.o
 VMM_OBJ = $(BUILD_DIR)/vmm.o
 VMM_FLUSH_OBJ = $(BUILD_DIR)/vmm_flush.o
+KMALLOC_OBJ = $(BUILD_DIR)/kmalloc.o
 
 # All object files
-OBJS = $(BOOT_OBJ) $(KERNEL_OBJ) $(VIDEO_OBJ) $(FONT_OBJ) $(CONSOLE_OBJ) $(GDT_OBJ) $(GDT_FLUSH_OBJ) $(IDT_OBJ) $(IDT_FLUSH_OBJ) $(ISR_OBJ) $(IRQ_OBJ) $(MMAP_OBJ) $(PMM_OBJ) $(VMM_OBJ) $(VMM_FLUSH_OBJ)
+OBJS = $(BOOT_OBJ) $(KERNEL_OBJ) $(VIDEO_OBJ) $(FONT_OBJ) $(CONSOLE_OBJ) $(GDT_OBJ) $(GDT_FLUSH_OBJ) $(IDT_OBJ) $(IDT_FLUSH_OBJ) $(ISR_OBJ) $(IRQ_OBJ) $(MMAP_OBJ) $(PMM_OBJ) $(VMM_OBJ) $(VMM_FLUSH_OBJ) $(KMALLOC_OBJ)
 
 # Output files
 KERNEL_ELF = $(BUILD_DIR)/kernel.elf
@@ -176,6 +178,12 @@ $(VMM_FLUSH_OBJ): $(VMM_FLUSH_SRC)
 	@mkdir -p $(BUILD_DIR)
 	@echo "Compiling VMM flush..."
 	$(NASM) $(NASMFLAGS) $(VMM_FLUSH_SRC) -o $(VMM_FLUSH_OBJ)
+
+# Compile KMALLOC
+$(KMALLOC_OBJ): $(KMALLOC_SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Compiling KMALLOC..."
+	$(CC) $(CFLAGS) -c $(KMALLOC_SRC) -o $(KMALLOC_OBJ)
 
 # Clean build artifacts
 clean:

@@ -3,6 +3,7 @@
 #include "mem/mmap.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
+#include "mem/kmalloc.h"
 #include "arch/x86/gdt.h"
 #include "arch/x86/idt.h"
 
@@ -60,7 +61,7 @@ void kernel_main(uint32_t magic, void* mbinfo) {
     if (page1 && page2 && page3) {
         console_puts("[PMM] Allocated 3 pages successfully\n");
         console_puts("[PMM] Free pages after allocation: ");
-        console_putu32(pmm_free_pages());
+        console_putu32(pmm_get_free_pages());
         console_puts("\n");
         
         pmm_free_page(page1);
@@ -69,7 +70,7 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         
         console_puts("[PMM] Freed 3 pages\n");
         console_puts("[PMM] Free pages after free: ");
-        console_putu32(pmm_free_pages());
+        console_putu32(pmm_get_free_pages());
         console_puts("\n");
     } else {
         console_puts("[PMM] Failed to allocate pages\n");
@@ -101,8 +102,117 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         pmm_free_page(test_phys);
     }
     
+    // Initialize KMALLOC
+    console_puts("\n[KMALLOC] Initializing kernel heap...\n");
+    kmalloc_init();
+    
+    // Test: kmalloc and kfree
+    console_puts("[KMALLOC] Testing memory allocation...\n");
+    
+    // 작은 할당 테스트
+    char* str1 = (char*)kmalloc(32);
+    if (str1) {
+        console_puts("[KMALLOC] Allocated 32 bytes\n");
+        console_puts("[KMALLOC] Used: ");
+        console_putu32(kmalloc_used_bytes());
+        console_puts(" bytes\n");
+        
+        // 메모리에 데이터 쓰기
+        for (int i = 0; i < 31; i++) {
+            str1[i] = 'A' + (i % 26);
+        }
+        str1[31] = '\0';
+        
+        console_puts("[KMALLOC] Written data: ");
+        console_puts(str1);
+        console_puts("\n");
+    }
+    
+    // 중간 크기 할당 테스트
+    int* numbers = (int*)kmalloc(10 * sizeof(int));
+    if (numbers) {
+        console_puts("[KMALLOC] Allocated array of 10 integers\n");
+        console_puts("[KMALLOC] Used: ");
+        console_putu32(kmalloc_used_bytes());
+        console_puts(" bytes\n");
+        
+        // 배열에 데이터 쓰기
+        for (int i = 0; i < 10; i++) {
+            numbers[i] = i * 100;
+        }
+        
+        console_puts("[KMALLOC] Array values: ");
+        for (int i = 0; i < 10; i++) {
+            console_putu32(numbers[i]);
+            console_puts(" ");
+        }
+        console_puts("\n");
+    }
+    
+    // 큰 할당 테스트
+    void* big_block = kmalloc(8192);
+    if (big_block) {
+        console_puts("[KMALLOC] Allocated 8192 bytes\n");
+        console_puts("[KMALLOC] Used: ");
+        console_putu32(kmalloc_used_bytes());
+        console_puts(" bytes\n");
+    }
+    
+    // 해제 테스트
+    console_puts("[KMALLOC] Testing kfree...\n");
+    if (kfree(str1)) {
+        console_puts("[KMALLOC] Freed str1 successfully\n");
+    }
+    if (kfree(numbers)) {
+        console_puts("[KMALLOC] Freed numbers successfully\n");
+    }
+    if (kfree(big_block)) {
+        console_puts("[KMALLOC] Freed big_block successfully\n");
+    }
+    
+    console_puts("[KMALLOC] After free - Used: ");
+    console_putu32(kmalloc_used_bytes());
+    console_puts(" bytes, Free: ");
+    console_putu32(kmalloc_free_bytes());
+    console_puts(" bytes\n");
+    
+    // Double free 테스트
+    console_puts("[KMALLOC] Testing double free detection...\n");
+    if (!kfree(str1)) {
+        console_puts("[KMALLOC] Double free correctly detected\n");
+    }
+    
+    // 병합 테스트: 연속된 블록 할당 후 순서대로 해제
+    console_puts("\n[KMALLOC] Testing block merging...\n");
+    void* block1 = kmalloc(64);
+    void* block2 = kmalloc(64);
+    void* block3 = kmalloc(64);
+    
+    if (block1 && block2 && block3) {
+        console_puts("[KMALLOC] Allocated 3 blocks (64 bytes each)\n");
+        console_puts("[KMALLOC] Used: ");
+        console_putu32(kmalloc_used_bytes());
+        console_puts(" bytes\n");
+        
+        // 중간 블록 먼저 해제
+        kfree(block2);
+        console_puts("[KMALLOC] Freed middle block\n");
+        
+        // 첫 번째 블록 해제 (앞과 병합되어야 함)
+        kfree(block1);
+        console_puts("[KMALLOC] Freed first block (should merge with middle)\n");
+        
+        // 마지막 블록 해제 (모두 병합되어야 함)
+        kfree(block3);
+        console_puts("[KMALLOC] Freed last block (should merge all)\n");
+        
+        console_puts("[KMALLOC] After merging - Free: ");
+        console_putu32(kmalloc_free_bytes());
+        console_puts(" bytes\n");
+    }
+    
     // Test: Put string
-    console_puts("Hello World!\n");
+    console_puts("\nHello World!\n");
     console_puts("Console test: ");
     console_putc('O');
     console_putc('K');

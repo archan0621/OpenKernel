@@ -334,40 +334,122 @@ void* pmm_alloc_page(void) {
     return NULL;
 }
 
-void pmm_free_page(void* page) {
+bool pmm_free_page(void* page) {
     if (!bitmap || !page) {
-        return;
+        return false;
     }
 
     uint64_t page_addr = (uint64_t)page;
     
     if (page_addr < memory_start || page_addr >= memory_end) {
-        return;
+        return false;
     }
 
     if ((page_addr & 0xFFF) != 0) {
-        return;
+        return false;
     }
 
     uint32_t page_offset = (uint32_t)(page_addr - memory_start);
     uint32_t page_idx = page_offset >> 12;
     
     if (page_idx >= total_pages) {
-        return;
+        return false;
     }
 
     if (!bitmap_get(page_idx)) {
-        return;
+        return false;
     }
 
     bitmap_clear(page_idx);
     free_pages++;
+    return true;
+}
+
+// 연속된 count개의 페이지 할당
+// 원자적(atomic) 동작: 모두 할당 가능하면 할당, 아니면 NULL 반환
+// 부분 할당 없음 - 메모리 누수 방지
+void* pmm_alloc_pages(uint32_t count) {
+    if (!bitmap || free_pages < count || count == 0) {
+        return NULL;
+    }
+
+    // 1단계: 연속된 free 페이지 찾기 (할당하지 않음)
+    uint32_t consecutive = 0;
+    uint32_t start_idx = 0;
+    bool found = false;
+    
+    for (uint32_t i = 0; i < total_pages; i++) {
+        if (!bitmap_get(i)) {
+            if (consecutive == 0) {
+                start_idx = i;
+            }
+            consecutive++;
+            
+            if (consecutive == count) {
+                found = true;
+                break;
+            }
+        } else {
+            consecutive = 0;
+        }
+    }
+
+    if (!found) {
+        return NULL;
+    }
+
+    // 2단계: 연속된 페이지 발견 후 모두 할당 (원자적)
+    for (uint32_t j = 0; j < count; j++) {
+        bitmap_set(start_idx + j);
+    }
+    free_pages -= count;
+    
+    return (void*)(memory_start + (uint64_t)start_idx * PAGE_SIZE);
+}
+
+// 연속된 count개의 페이지 해제
+bool pmm_free_pages_range(void* page, uint32_t count) {
+    if (!bitmap || !page || count == 0) {
+        return false;
+    }
+
+    uint64_t page_addr = (uint64_t)page;
+    
+    if (page_addr < memory_start || page_addr >= memory_end) {
+        return false;
+    }
+
+    if ((page_addr & 0xFFF) != 0) {
+        return false;
+    }
+
+    uint32_t page_offset = (uint32_t)(page_addr - memory_start);
+    uint32_t start_idx = page_offset >> 12;
+    
+    if (start_idx + count > total_pages) {
+        return false;
+    }
+
+    // 모든 페이지가 할당된 상태인지 확인
+    for (uint32_t i = 0; i < count; i++) {
+        if (!bitmap_get(start_idx + i)) {
+            return false;  // 이미 free된 페이지 포함
+        }
+    }
+
+    // 모두 해제
+    for (uint32_t i = 0; i < count; i++) {
+        bitmap_clear(start_idx + i);
+    }
+    free_pages += count;
+    
+    return true;
 }
 
 uint32_t pmm_total_pages(void) {
     return total_pages;
 }
 
-uint32_t pmm_free_pages(void) {
+uint32_t pmm_get_free_pages(void) {
     return free_pages;
 }
