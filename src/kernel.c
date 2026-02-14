@@ -261,38 +261,8 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         console_puts("\n");
         scheduler_print_status();
         
-        // 스케줄링 시뮬레이션 (타이머 틱)
-        console_puts("\n[SCHEDULER] Simulating timer ticks...\n");
-        for (int i = 0; i < 5; i++) {
-            console_puts("  Tick ");
-            console_putu32(i);
-            console_puts(": ");
-            
-            scheduler_tick();
-            
-            task_struct_t* current = scheduler_get_current_task();
-            if (current) {
-                console_puts("Current=");
-                console_puts(current->name);
-                console_puts(", TimeRemaining=");
-                console_putu32(current->time_remaining);
-            }
-            console_puts("\n");
-        }
-        
-        // 수동 스케줄링 테스트
-        console_puts("\n[SCHEDULER] Testing manual scheduling...\n");
-        schedule();
-        console_puts("\n");
-        scheduler_print_status();
-        
-        schedule();
-        console_puts("\n");
-        scheduler_print_status();
-        
-        schedule();
-        console_puts("\n");
-        scheduler_print_status();
+        console_puts("\n[SCHEDULER] Tasks are ready. Waiting for timer IRQ...\n");
+        console_puts("[SCHEDULER] Context switching will happen automatically via IRQ0\n");
         
         // 태스크 정리
         console_puts("\n[SCHEDULER] Cleaning up tasks...\n");
