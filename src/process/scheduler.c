@@ -20,6 +20,43 @@ static task_struct_t* current_task = NULL;
 static uint32_t total_tasks = 0;
 static uint32_t scheduler_ticks = 0;
 
+static void scheduler_enqueue_task(task_struct_t* task) {
+    task->next = NULL;
+    task->prev = ready_queue_tail;
+
+    if (ready_queue_tail) {
+        ready_queue_tail->next = task;
+    } else {
+        ready_queue_head = task;
+    }
+
+    ready_queue_tail = task;
+    total_tasks++;
+}
+
+static task_struct_t* scheduler_dequeue_task(void) {
+    task_struct_t* task = ready_queue_head;
+    if (!task) {
+        return NULL;
+    }
+
+    ready_queue_head = task->next;
+    if (ready_queue_head) {
+        ready_queue_head->prev = NULL;
+    } else {
+        ready_queue_tail = NULL;
+    }
+
+    task->next = NULL;
+    task->prev = NULL;
+
+    if (total_tasks > 0) {
+        total_tasks--;
+    }
+
+    return task;
+}
+
 void scheduler_init(void) {
     console_puts("[SCHEDULER] Initializing round-robin scheduler...\n");
     
@@ -50,18 +87,7 @@ void scheduler_add_task(task_struct_t* task) {
     // 태스크를 READY 상태로 설정
     task_set_state(task, TASK_READY);
     
-    // 큐의 끝에 추가 (FIFO)
-    task->next = NULL;
-    task->prev = ready_queue_tail;
-    
-    if (ready_queue_tail) {
-        ready_queue_tail->next = task;
-    } else {
-        ready_queue_head = task;
-    }
-    
-    ready_queue_tail = task;
-    total_tasks++;
+    scheduler_enqueue_task(task);
     
     console_puts("[SCHEDULER] Added task '");
     console_puts(task->name);
@@ -70,6 +96,20 @@ void scheduler_add_task(task_struct_t* task) {
 
 void scheduler_remove_task(task_struct_t* task) {
     if (!task) {
+        return;
+    }
+
+    bool found = false;
+    task_struct_t* current = ready_queue_head;
+    while (current) {
+        if (current == task) {
+            found = true;
+            break;
+        }
+        current = current->next;
+    }
+
+    if (!found) {
         return;
     }
     
@@ -230,29 +270,13 @@ uint32_t scheduler_irq_handler(void* frame_ptr) {
             
             // 커널 태스크가 아니면 큐에 다시 추가
             if (old_task->pid != 0) {
-                scheduler_add_task(old_task);
+                scheduler_enqueue_task(old_task);
             }
         }
         
         // 다음 태스크 선택
-        if (ready_queue_head) {
-            new_task = ready_queue_head;
-            
-            // 큐에서 제거
-            ready_queue_head = new_task->next;
-            if (ready_queue_head) {
-                ready_queue_head->prev = NULL;
-            } else {
-                ready_queue_tail = NULL;
-            }
-            
-            new_task->next = NULL;
-            new_task->prev = NULL;
-            
-            if (total_tasks > 0) {
-                total_tasks--;
-            }
-        } else {
+        new_task = scheduler_dequeue_task();
+        if (!new_task) {
             // Ready 큐가 비어있으면 커널 태스크
             new_task = task_get_kernel_task();
         }
@@ -261,12 +285,6 @@ uint32_t scheduler_irq_handler(void* frame_ptr) {
         if (new_task && new_task != old_task) {
             new_task->state = TASK_RUNNING;
             current_task = new_task;
-            
-            console_puts("[SCHEDULER] IRQ Context switch: '");
-            console_puts(old_task->name);
-            console_puts("' -> '");
-            console_puts(new_task->name);
-            console_puts("'\n");
             
             // 새 태스크의 esp 반환
             return (uint32_t)new_task->esp;

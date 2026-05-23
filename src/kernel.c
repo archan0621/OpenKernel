@@ -34,6 +34,33 @@ static void console_putu32(uint32_t v) {
     }
 }
 
+static void scheduler_demo_delay(void) {
+    for (volatile uint32_t i = 0; i < 3000000; i++) {
+        __asm__ __volatile__("" : : : "memory");
+    }
+}
+
+static void scheduler_demo_task1(void) {
+    for (;;) {
+        console_putc('1');
+        scheduler_demo_delay();
+    }
+}
+
+static void scheduler_demo_task2(void) {
+    for (;;) {
+        console_putc('2');
+        scheduler_demo_delay();
+    }
+}
+
+static void scheduler_demo_task3(void) {
+    for (;;) {
+        console_putc('3');
+        scheduler_demo_delay();
+    }
+}
+
 void kernel_main(uint32_t magic, void* mbinfo) {
     if (magic != MB2_MAGIC)
         hlt_loop();
@@ -222,24 +249,11 @@ void kernel_main(uint32_t magic, void* mbinfo) {
     scheduler_init();
     
     // Test: Task 생성 및 스케줄링
-    console_puts("[SCHEDULER] Testing round-robin scheduling...\n");
+    console_puts("[SCHEDULER] Starting round-robin scheduler demo...\n");
     
-    // 더미 함수 (실제로는 실행 안 됨, 테스트용)
-    void dummy_task1(void) {
-        console_puts("Task 1 running\n");
-    }
-    
-    void dummy_task2(void) {
-        console_puts("Task 2 running\n");
-    }
-    
-    void dummy_task3(void) {
-        console_puts("Task 3 running\n");
-    }
-    
-    task_struct_t* task1 = task_create("task1", dummy_task1, 1);
-    task_struct_t* task2 = task_create("task2", dummy_task2, 1);
-    task_struct_t* task3 = task_create("task3", dummy_task3, 1);
+    task_struct_t* task1 = task_create("task1", scheduler_demo_task1, 1);
+    task_struct_t* task2 = task_create("task2", scheduler_demo_task2, 1);
+    task_struct_t* task3 = task_create("task3", scheduler_demo_task3, 1);
     
     if (task1 && task2 && task3) {
         console_puts("[SCHEDULER] Created 3 tasks successfully\n");
@@ -261,15 +275,11 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         console_puts("\n");
         scheduler_print_status();
         
-        console_puts("\n[SCHEDULER] Tasks are ready. Waiting for timer IRQ...\n");
-        console_puts("[SCHEDULER] Context switching will happen automatically via IRQ0\n");
-        
-        // 태스크 정리
-        console_puts("\n[SCHEDULER] Cleaning up tasks...\n");
-        task_destroy(task1);
-        task_destroy(task2);
-        task_destroy(task3);
-        console_puts("[SCHEDULER] Tasks destroyed\n");
+        console_puts("\n[SCHEDULER] Tasks are ready. Enabling timer IRQ0...\n");
+        console_puts("[SCHEDULER] Output should cycle through 1, 2, and 3.\n");
+
+        idt_enable_interrupts();
+        hlt_loop();
     }
     
     // Test: Put string
