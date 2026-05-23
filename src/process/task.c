@@ -14,6 +14,25 @@ static task_struct_t kernel_task;
 extern task_struct_t* scheduler_get_current_task(void);
 extern void scheduler_set_current_task(task_struct_t* task);
 
+static void task_entry_trampoline(void) __attribute__((noreturn));
+
+static void task_entry_trampoline(void) {
+    task_struct_t* current = scheduler_get_current_task();
+
+    if (current && current->entry_point) {
+        current->entry_point();
+    }
+
+    if (current) {
+        current->state = TASK_TERMINATED;
+        current->time_remaining = 0;
+    }
+
+    for (;;) {
+        __asm__ __volatile__("sti; hlt");
+    }
+}
+
 task_struct_t* task_get_kernel_task(void) {
     return &kernel_task;
 }
@@ -42,6 +61,7 @@ void task_init(void) {
     kernel_task.creation_time = 0;
     kernel_task.cpu_time = 0;
     kernel_task.page_directory = vmm_get_current_page_dir();
+    kernel_task.entry_point = NULL;
     
     console_puts("[TASK] Kernel task initialized (PID 0)\n");
 }
@@ -75,6 +95,7 @@ task_struct_t* task_create(const char* name, void (*entry_point)(void), uint32_t
     task->time_remaining = task->time_slice;
     task->creation_time = 0;  // TODO: 타이머 구현 후 실제 시간 설정
     task->cpu_time = 0;
+    task->entry_point = entry_point;
     
     // 커널 스택 할당 (4KB) - 태스크별 독립 스택
     task->kernel_stack = (uint32_t)kmalloc(4096);
@@ -95,7 +116,7 @@ task_struct_t* task_create(const char* name, void (*entry_point)(void), uint32_t
     // IRET이 pop할 값들 (CPU가 자동 처리)
     *(--stack_ptr) = 0x202;                      // EFLAGS (IF 활성화)
     *(--stack_ptr) = 0x08;                       // CS (커널 코드 세그먼트)
-    *(--stack_ptr) = (uint32_t)entry_point;      // EIP (entry point)
+    *(--stack_ptr) = (uint32_t)task_entry_trampoline; // EIP
     
     // 인터럽트 번호와 에러 코드
     *(--stack_ptr) = 0;                          // err_code

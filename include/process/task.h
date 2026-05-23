@@ -20,6 +20,7 @@ typedef struct task_struct {
     uint32_t* esp;                  // 스택 포인터 (컨텍스트 저장 위치)
     uint32_t kernel_stack;          // 커널 스택 베이스 주소
     uint32_t* page_directory;       // 페이지 디렉토리 (가상 메모리)
+    void (*entry_point)(void);      // 태스크 시작 함수
     
     uint32_t priority;              // 우선순위 (0이 가장 높음)
     uint32_t time_slice;            // 타임 슬라이스 (틱 수)
