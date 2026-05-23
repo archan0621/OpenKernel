@@ -2,6 +2,20 @@
 #include "drivers/console/console.h"
 #include <stdint.h>
 
+#define PIC1_COMMAND 0x20
+#define PIC1_DATA    0x21
+#define PIC2_COMMAND 0xA0
+#define PIC2_DATA    0xA1
+
+#define PIC_EOI      0x20
+#define ICW1_INIT    0x10
+#define ICW1_ICW4    0x01
+#define ICW4_8086    0x01
+
+#define PIT_COMMAND  0x43
+#define PIT_CHANNEL0 0x40
+#define PIT_BASE_HZ  1193182u
+
 // Linker symbols (from linker.ld)
 extern uint32_t kernel_start;
 extern uint32_t kernel_end;
@@ -24,6 +38,56 @@ struct idt_ptr {
 // IDT with 256 entries (x86 supports 256 interrupts)
 static struct idt_entry idt[256];
 static struct idt_ptr idtp;
+
+static inline void outb(uint16_t port, uint8_t value) {
+    __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
+}
+
+static inline void io_wait(void) {
+    outb(0x80, 0);
+}
+
+static void pic_remap(void) {
+    outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);
+    io_wait();
+    outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
+    io_wait();
+
+    outb(PIC1_DATA, 0x20);
+    io_wait();
+    outb(PIC2_DATA, 0x28);
+    io_wait();
+
+    outb(PIC1_DATA, 0x04);
+    io_wait();
+    outb(PIC2_DATA, 0x02);
+    io_wait();
+
+    outb(PIC1_DATA, ICW4_8086);
+    io_wait();
+    outb(PIC2_DATA, ICW4_8086);
+    io_wait();
+
+    outb(PIC1_DATA, 0xFE); // enable IRQ0 only
+    outb(PIC2_DATA, 0xFF); // keep slave IRQs masked for now
+}
+
+static void pit_set_frequency(uint32_t hz) {
+    if (hz == 0) {
+        hz = 100;
+    }
+
+    uint32_t divisor = PIT_BASE_HZ / hz;
+    if (divisor == 0) {
+        divisor = 1;
+    } else if (divisor > 0xFFFF) {
+        divisor = 0xFFFF;
+    }
+
+    outb(PIT_COMMAND, 0x36);
+    outb(PIT_CHANNEL0, (uint8_t)(divisor & 0xFF));
+    outb(PIT_CHANNEL0, (uint8_t)((divisor >> 8) & 0xFF));
+}
 
 // External assembly function to load IDTR
 extern void idt_flush(uint32_t);
@@ -434,10 +498,10 @@ void irq_handler(struct interrupt_frame* frame) {
     // Send EOI to PIC if IRQ >= 8
     if (frame->int_no >= 40) {
         // Send EOI to slave PIC
-        __asm__ __volatile__("outb %%al, $0xA0" : : "a"(0x20));
+        outb(PIC2_COMMAND, PIC_EOI);
     }
     // Send EOI to master PIC
-    __asm__ __volatile__("outb %%al, $0x20" : : "a"(0x20));
+    outb(PIC1_COMMAND, PIC_EOI);
     
     // Handle the IRQ
     console_puts("[IDT] IRQ occurred: ");
@@ -461,6 +525,8 @@ void idt_set_gate(uint8_t num, uint32_t base, uint16_t selector, uint8_t flags) 
 }
 
 void idt_init(void) {
+    idt_disable_interrupts();
+
     // Set up IDTR
     idtp.limit = sizeof(idt) - 1;
     idtp.base  = (uint32_t)&idt;
@@ -527,9 +593,20 @@ void idt_init(void) {
     idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
     idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
 
+    pic_remap();
+    pit_set_frequency(100);
+
     // Load IDTR
     idt_flush((uint32_t)&idtp);
 
     console_puts("[IDT] Initialized\n");
+    console_puts("[TIMER] PIT configured at 100 Hz, IRQ0 unmasked\n");
 }
 
+void idt_enable_interrupts(void) {
+    __asm__ __volatile__("sti");
+}
+
+void idt_disable_interrupts(void) {
+    __asm__ __volatile__("cli");
+}
