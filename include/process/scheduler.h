@@ -27,6 +27,7 @@ void scheduler_remove_task(task_struct_t* task);
 // 스케줄러 통계
 uint32_t scheduler_get_total_tasks(void);
 void scheduler_print_status(void);
+void scheduler_reap_terminated_tasks(void);
 
 // ✅ IRQ 기반 스케줄러 핸들러
 // 인터럽트 프레임 구조체는 scheduler.c에 정의됨

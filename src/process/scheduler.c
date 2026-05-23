@@ -1,5 +1,6 @@
 #include "process/scheduler.h"
 #include "process/task.h"
+#include "arch/x86/idt.h"
 #include "drivers/console/console.h"
 #include <stddef.h>
 
@@ -16,8 +17,11 @@ struct interrupt_frame {
 // 라운드 로빈 큐
 static task_struct_t* ready_queue_head = NULL;
 static task_struct_t* ready_queue_tail = NULL;
+static task_struct_t* terminated_queue_head = NULL;
+static task_struct_t* terminated_queue_tail = NULL;
 static task_struct_t* current_task = NULL;
 static uint32_t total_tasks = 0;
+static uint32_t terminated_tasks = 0;
 static uint32_t scheduler_ticks = 0;
 
 static void scheduler_enqueue_task(task_struct_t* task) {
@@ -57,12 +61,56 @@ static task_struct_t* scheduler_dequeue_task(void) {
     return task;
 }
 
+static void scheduler_enqueue_terminated_task(task_struct_t* task) {
+    if (!task || task->pid == 0) {
+        return;
+    }
+
+    task->next = NULL;
+    task->prev = terminated_queue_tail;
+
+    if (terminated_queue_tail) {
+        terminated_queue_tail->next = task;
+    } else {
+        terminated_queue_head = task;
+    }
+
+    terminated_queue_tail = task;
+    terminated_tasks++;
+}
+
+static task_struct_t* scheduler_dequeue_terminated_task(void) {
+    task_struct_t* task = terminated_queue_head;
+    if (!task) {
+        return NULL;
+    }
+
+    terminated_queue_head = task->next;
+    if (terminated_queue_head) {
+        terminated_queue_head->prev = NULL;
+    } else {
+        terminated_queue_tail = NULL;
+    }
+
+    task->next = NULL;
+    task->prev = NULL;
+
+    if (terminated_tasks > 0) {
+        terminated_tasks--;
+    }
+
+    return task;
+}
+
 void scheduler_init(void) {
     console_puts("[SCHEDULER] Initializing round-robin scheduler...\n");
     
     ready_queue_head = NULL;
     ready_queue_tail = NULL;
+    terminated_queue_head = NULL;
+    terminated_queue_tail = NULL;
     total_tasks = 0;
+    terminated_tasks = 0;
     scheduler_ticks = 0;
     
     // 현재 태스크는 커널 태스크
@@ -154,6 +202,20 @@ uint32_t scheduler_get_total_tasks(void) {
     return total_tasks;
 }
 
+void scheduler_reap_terminated_tasks(void) {
+    for (;;) {
+        idt_disable_interrupts();
+        task_struct_t* task = scheduler_dequeue_terminated_task();
+        idt_enable_interrupts();
+
+        if (!task) {
+            return;
+        }
+
+        task_destroy(task);
+    }
+}
+
 void scheduler_print_status(void) {
     console_puts("[SCHEDULER] Status:\n");
     console_puts("  Total tasks in ready queue: ");
@@ -196,6 +258,20 @@ void scheduler_print_status(void) {
     
     console_puts("  Scheduler ticks: ");
     count = scheduler_ticks;
+    idx = 0;
+    if (count == 0) {
+        console_putc('0');
+    } else {
+        while (count > 0 && idx < 11) {
+            buf[idx++] = (char)('0' + (count % 10));
+            count /= 10;
+        }
+        while (idx--) console_putc(buf[idx]);
+    }
+    console_puts("\n");
+
+    console_puts("  Terminated tasks pending cleanup: ");
+    count = terminated_tasks;
     idx = 0;
     if (count == 0) {
         console_putc('0');
@@ -272,6 +348,8 @@ uint32_t scheduler_irq_handler(void* frame_ptr) {
             if (old_task->pid != 0) {
                 scheduler_enqueue_task(old_task);
             }
+        } else if (old_task->state == TASK_TERMINATED) {
+            scheduler_enqueue_terminated_task(old_task);
         }
         
         // 다음 태스크 선택

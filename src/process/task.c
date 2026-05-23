@@ -23,14 +23,7 @@ static void task_entry_trampoline(void) {
         current->entry_point();
     }
 
-    if (current) {
-        current->state = TASK_TERMINATED;
-        current->time_remaining = 0;
-    }
-
-    for (;;) {
-        __asm__ __volatile__("sti; hlt");
-    }
+    task_exit();
 }
 
 task_struct_t* task_get_kernel_task(void) {
@@ -68,6 +61,19 @@ void task_init(void) {
 
 uint32_t task_get_next_pid(void) {
     return next_pid++;
+}
+
+void task_exit(void) {
+    task_struct_t* current = scheduler_get_current_task();
+
+    if (current && current->pid != 0) {
+        current->state = TASK_TERMINATED;
+        current->time_remaining = 0;
+    }
+
+    for (;;) {
+        __asm__ __volatile__("sti; hlt");
+    }
 }
 
 task_struct_t* task_create(const char* name, void (*entry_point)(void), uint32_t priority) {
@@ -176,6 +182,10 @@ task_struct_t* task_create(const char* name, void (*entry_point)(void), uint32_t
 
 void task_destroy(task_struct_t* task) {
     if (!task) {
+        return;
+    }
+
+    if (task->pid == 0 || task == scheduler_get_current_task()) {
         return;
     }
     

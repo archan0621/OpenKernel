@@ -37,6 +37,7 @@ typedef struct task_struct {
 void task_init(void);
 task_struct_t* task_create(const char* name, void (*entry_point)(void), uint32_t priority);
 void task_destroy(task_struct_t* task);
+void task_exit(void) __attribute__((noreturn));
 task_struct_t* task_get_current(void);
 void task_set_current(task_struct_t* task);
 uint32_t task_get_next_pid(void);
