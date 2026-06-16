@@ -1,3 +1,11 @@
 #!/bin/bash
-# Run the kernel in QEMU with graphical display
-qemu-system-i386 -cdrom build/archanOS.iso -no-reboot -no-shutdown
+set -euo pipefail
+
+ISO="build/archanOS.iso"
+
+if [ ! -f "$ISO" ]; then
+    echo "[run_qemu] $ISO not found. Building it with make..."
+    make
+fi
+
+exec qemu-system-i386 -cdrom "$ISO" -no-reboot -no-shutdown
