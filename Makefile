@@ -5,6 +5,7 @@ NASM = nasm
 CC = x86_64-elf-gcc
 LD = x86_64-elf-ld
 GRUB_MKRESCUE = i686-elf-grub-mkrescue
+QEMU = qemu-system-i386
 
 # Flags
 NASMFLAGS = -f elf32
@@ -217,6 +218,9 @@ clean:
 # Rebuild everything
 rebuild: clean all
 
-# Phony targets
-.PHONY: all clean rebuild
+# Run in QEMU
+run: $(ISO)
+	$(QEMU) -cdrom $(ISO) -no-reboot -no-shutdown
 
+# Phony targets
+.PHONY: all clean rebuild run
