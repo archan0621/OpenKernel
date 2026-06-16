@@ -10,8 +10,8 @@ static uint32_t free_pages = 0;
 static uint8_t g_bitmap[128 * 1024];
 static uint8_t* bitmap = NULL;
 static uint32_t bitmap_size = 0;
-static uint64_t memory_start = 0;
-static uint64_t memory_end = 0;
+static uint32_t memory_start = 0;
+static uint32_t memory_end = 0;
 
 extern char kernel_start;
 extern char kernel_end;
@@ -71,8 +71,9 @@ void pmm_init(uint32_t magic, void* mbinfo) {
     uint8_t* start = (uint8_t*)mm + sizeof(*mm);
     uint8_t* end = (uint8_t*)mm + mm->size;
 
-    uint64_t max_addr = 0;
-    uint64_t min_addr = 0xFFFFFFFFFFFFFFFFULL;
+    uint32_t max_addr = 0;
+    uint32_t min_addr = UINT32_MAX;
+    bool found_usable_memory = false;
 
     console_puts("[PMM] Scanning memory map...\n");
     
@@ -102,12 +103,16 @@ void pmm_init(uint32_t magic, void* mbinfo) {
             
             // Only process 32-bit addresses
             if (addr_high == 0 && len_high == 0) {
-                uint32_t entry_start_32 = addr_low;
-                uint32_t entry_end_32 = addr_low + len_low;
-                uint64_t entry_start = (uint64_t)entry_start_32;
-                uint64_t entry_end = (uint64_t)entry_end_32;
+                uint32_t entry_start = addr_low;
+                uint32_t entry_end = addr_low + len_low;
 
-                if (min_addr == 0xFFFFFFFFFFFFFFFFULL || entry_start < min_addr) {
+                if (entry_end < entry_start) {
+                    entry_end = UINT32_MAX;
+                }
+
+                found_usable_memory = true;
+
+                if (entry_start < min_addr) {
                     min_addr = entry_start;
                 }
                 if (entry_end > max_addr) {
@@ -133,18 +138,16 @@ void pmm_init(uint32_t magic, void* mbinfo) {
     }
     console_puts(" entries processed)\n");
     
-    if (min_addr == 0xFFFFFFFFFFFFFFFFULL || max_addr == 0) {
+    if (!found_usable_memory || max_addr == 0) {
         console_puts("[PMM] No usable memory found\n");
         return;
     }
 
     console_puts("[PMM] Aligning memory...\n");
     
-    uint32_t min_addr_32 = (uint32_t)min_addr;
-    uint32_t max_addr_32 = (uint32_t)max_addr;
     uint32_t page_mask_32 = ~(PAGE_SIZE - 1);
     
-    uint32_t mem_start_32 = (min_addr_32 + PAGE_SIZE - 1) & page_mask_32;
+    uint32_t mem_start_32 = (min_addr + PAGE_SIZE - 1) & page_mask_32;
     
     // Exclude 0~1MB from PMM management (standard approach)
     const uint32_t PMM_MIN_ADDR = 0x100000;
@@ -152,15 +155,15 @@ void pmm_init(uint32_t magic, void* mbinfo) {
         mem_start_32 = PMM_MIN_ADDR;
     }
     
-    uint32_t mem_end_32 = max_addr_32 & page_mask_32;
+    uint32_t mem_end_32 = max_addr & page_mask_32;
 
     if (mem_end_32 <= mem_start_32) {
         console_puts("[PMM] Invalid memory range\n");
         return;
     }
     
-    memory_start = (uint64_t)mem_start_32;
-    memory_end = (uint64_t)mem_end_32;
+    memory_start = mem_start_32;
+    memory_end = mem_end_32;
 
     uint32_t mem_diff_32 = mem_end_32 - mem_start_32;
     total_pages = mem_diff_32 >> 12;
@@ -177,21 +180,19 @@ void pmm_init(uint32_t magic, void* mbinfo) {
 
     console_puts("[PMM] Calculating kernel region...\n");
     
-    uint32_t kernel_start_addr_32 = (uint32_t)&kernel_start;
-    uint32_t kernel_end_addr_32 = (uint32_t)&kernel_end;
-    uint64_t kernel_start_addr = (uint64_t)kernel_start_addr_32;
-    uint64_t kernel_end_addr = (uint64_t)kernel_end_addr_32;
+    uint32_t kernel_start_addr = (uint32_t)(uintptr_t)&kernel_start;
+    uint32_t kernel_end_addr = (uint32_t)(uintptr_t)&kernel_end;
     
-    uint64_t kernel_start_page = 0;
-    uint64_t kernel_end_page = 0;
+    uint32_t kernel_start_page = 0;
+    uint32_t kernel_end_page = 0;
     
     if (kernel_start_addr >= memory_start && kernel_start_addr < memory_end) {
-        uint64_t kernel_offset = kernel_start_addr - memory_start;
+        uint32_t kernel_offset = kernel_start_addr - memory_start;
         kernel_start_page = kernel_offset >> 12;
         
-        uint64_t kernel_end_offset = kernel_end_addr - memory_start;
+        uint32_t kernel_end_offset = kernel_end_addr - memory_start;
         kernel_end_page = (kernel_end_offset + PAGE_SIZE - 1) >> 12;
-        if (kernel_end_page > (uint64_t)total_pages) {
+        if (kernel_end_page > total_pages) {
             kernel_end_page = total_pages;
         }
     }
@@ -228,7 +229,7 @@ void pmm_init(uint32_t magic, void* mbinfo) {
     // 커널 영역을 명시적으로 사용 중으로 마킹
     if (kernel_end_page > 0) {
         console_puts("[PMM] Marking kernel region as used...\n");
-        for (uint32_t page_idx = (uint32_t)kernel_start_page; page_idx < (uint32_t)kernel_end_page && page_idx < total_pages; page_idx++) {
+        for (uint32_t page_idx = kernel_start_page; page_idx < kernel_end_page && page_idx < total_pages; page_idx++) {
             bitmap_set(page_idx);
         }
         console_puts("[PMM] Kernel region marked as used\n");
@@ -239,9 +240,6 @@ void pmm_init(uint32_t magic, void* mbinfo) {
     free_pages = 0;
     p = start;
     entry_count = 0;
-    uint32_t memory_start_32 = (uint32_t)memory_start;
-    uint32_t memory_end_32 = (uint32_t)memory_end;
-    
     // Process all memory map entries, bounded by 'end' pointer
     // No arbitrary limit - rely on bounds checking against 'end'
     while (p < end) {
@@ -264,11 +262,11 @@ void pmm_init(uint32_t magic, void* mbinfo) {
                 uint32_t entry_end_aligned = entry_end_32 & ~(PAGE_SIZE - 1);
 
                 if (entry_end_aligned > entry_start_aligned) {
-                    if (entry_start_aligned < memory_start_32) entry_start_aligned = memory_start_32;
-                    if (entry_end_aligned > memory_end_32) entry_end_aligned = memory_end_32;
+                    if (entry_start_aligned < memory_start) entry_start_aligned = memory_start;
+                    if (entry_end_aligned > memory_end) entry_end_aligned = memory_end;
 
-                    uint32_t page_start_offset = entry_start_aligned - memory_start_32;
-                    uint32_t page_end_offset = entry_end_aligned - memory_start_32;
+                    uint32_t page_start_offset = entry_start_aligned - memory_start;
+                    uint32_t page_end_offset = entry_end_aligned - memory_start;
                     uint32_t page_start = page_start_offset >> 12;
                     uint32_t page_end = page_end_offset >> 12;
 
@@ -276,7 +274,7 @@ void pmm_init(uint32_t magic, void* mbinfo) {
                         // 커널 영역은 사용 중으로 마킹 (할당 불가)
                         // kernel_start_page가 0일 수 있으므로 kernel_end_page만 체크
                         if (kernel_end_page > 0 && 
-                            page_idx >= (uint32_t)kernel_start_page && page_idx < (uint32_t)kernel_end_page) {
+                            page_idx >= kernel_start_page && page_idx < kernel_end_page) {
                             continue;
                         }
 
@@ -327,7 +325,7 @@ void* pmm_alloc_page(void) {
         if (!bitmap_get(i)) {
             bitmap_set(i);
             free_pages--;
-            return (void*)(memory_start + (uint64_t)i * PAGE_SIZE);
+            return (void*)(uintptr_t)(memory_start + i * PAGE_SIZE);
         }
     }
 
@@ -339,7 +337,7 @@ bool pmm_free_page(void* page) {
         return false;
     }
 
-    uint64_t page_addr = (uint64_t)page;
+    uint32_t page_addr = (uint32_t)(uintptr_t)page;
     
     if (page_addr < memory_start || page_addr >= memory_end) {
         return false;
@@ -404,7 +402,7 @@ void* pmm_alloc_pages(uint32_t count) {
     }
     free_pages -= count;
     
-    return (void*)(memory_start + (uint64_t)start_idx * PAGE_SIZE);
+    return (void*)(uintptr_t)(memory_start + start_idx * PAGE_SIZE);
 }
 
 // 연속된 count개의 페이지 해제
@@ -413,7 +411,7 @@ bool pmm_free_pages_range(void* page, uint32_t count) {
         return false;
     }
 
-    uint64_t page_addr = (uint64_t)page;
+    uint32_t page_addr = (uint32_t)(uintptr_t)page;
     
     if (page_addr < memory_start || page_addr >= memory_end) {
         return false;
