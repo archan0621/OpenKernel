@@ -15,6 +15,13 @@ static void hlt_loop(void) {
     for(;;) __asm__ __volatile__("hlt");
 }
 
+static void kernel_idle_loop(void) {
+    for (;;) {
+        scheduler_reap_terminated_tasks();
+        __asm__ __volatile__("sti; hlt");
+    }
+}
+
 static void console_putu32(uint32_t v) {
     char buf[11];
     int idx = 0;
@@ -279,7 +286,7 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         console_puts("[SCHEDULER] Output should cycle through 1, 2, and 3.\n");
 
         idt_enable_interrupts();
-        hlt_loop();
+        kernel_idle_loop();
     }
     
     // Test: Put string
