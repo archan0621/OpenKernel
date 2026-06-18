@@ -6,12 +6,14 @@
 #include "mem/kmalloc.h"
 #include "process/task.h"
 #include "process/scheduler.h"
+#include "process/channel.h"
 #include "arch/x86/gdt.h"
 #include "arch/x86/idt.h"
 
 #define MB2_MAGIC 0x36d76289
 
-static task_struct_t* scheduler_demo_blocked_task = 0;
+static channel_t* ipc_request_channel = 0;
+static channel_t* ipc_ack_channel = 0;
 
 static void hlt_loop(void) {
     for(;;) __asm__ __volatile__("hlt");
@@ -43,39 +45,62 @@ static void console_putu32(uint32_t v) {
     }
 }
 
-static void scheduler_demo_task1(void) {
-    for (;;) {
-        console_putc('1');
+static uint32_t current_task_pid(void) {
+    task_struct_t* current = task_get_current();
+    return current ? current->pid : 0;
+}
 
-        if (scheduler_demo_blocked_task &&
-            task_get_state(scheduler_demo_blocked_task) == TASK_BLOCKED &&
-            !scheduler_demo_blocked_task->waiting_for_timer) {
-            task_unblock(scheduler_demo_blocked_task);
+static void channel_producer_task(void) {
+    uint32_t value = 0;
+
+    for (;;) {
+        value++;
+
+        channel_message_t request = {
+            .type = 1,
+            .sender_pid = current_task_pid(),
+            .value = value,
+        };
+
+        if (channel_send(ipc_request_channel, &request)) {
+            console_putc('S');
+
+            channel_message_t ack;
+            if (channel_recv(ipc_ack_channel, &ack)) {
+                console_putc('A');
+            }
+        } else {
+            console_putc('!');
         }
 
-        task_sleep_ticks(20);
+        task_sleep_ticks(25);
     }
 }
 
-static void scheduler_demo_task2(void) {
+static void channel_consumer_task(void) {
     for (;;) {
-        console_putc('2');
-        task_sleep_ms(350);
+        channel_message_t request;
+
+        if (channel_recv(ipc_request_channel, &request)) {
+            console_putc('R');
+            console_putc((char)('0' + (request.value % 10)));
+
+            channel_message_t ack = {
+                .type = 2,
+                .sender_pid = current_task_pid(),
+                .value = request.value,
+            };
+
+            channel_send(ipc_ack_channel, &ack);
+        } else {
+            task_yield();
+        }
     }
 }
 
-static void scheduler_demo_task3(void) {
-    uint32_t loops = 0;
-
+static void channel_heartbeat_task(void) {
     for (;;) {
-        console_putc('3');
-        loops++;
-
-        if ((loops % 4) == 0) {
-            task_block();
-        }
-
-        task_yield();
+        console_putc('.');
         task_sleep_ticks(50);
     }
 }
@@ -266,37 +291,54 @@ void kernel_main(uint32_t magic, void* mbinfo) {
     // Initialize Scheduler
     console_puts("\n[SCHEDULER] Initializing scheduler...\n");
     scheduler_init();
+
+    // Initialize local Channel IPC
+    console_puts("\n[CHANNEL] Initializing local IPC...\n");
+    channel_init();
+
+    ipc_request_channel = channel_create();
+    ipc_ack_channel = channel_create();
+
+    if (!ipc_request_channel || !ipc_ack_channel) {
+        console_puts("[CHANNEL] Failed to create IPC demo channels\n");
+        hlt_loop();
+    }
+
+    console_puts("[CHANNEL] Created request channel #");
+    console_putu32(channel_get_id(ipc_request_channel));
+    console_puts(" and ack channel #");
+    console_putu32(channel_get_id(ipc_ack_channel));
+    console_puts("\n");
     
-    // Test: Task 생성 및 스케줄링
-    console_puts("[SCHEDULER] Starting round-robin scheduler demo...\n");
+    // Test: Task scheduling and local Channel IPC
+    console_puts("[CHANNEL] Starting producer/consumer IPC demo...\n");
     
-    task_struct_t* task1 = task_create("task1", scheduler_demo_task1, 1);
-    task_struct_t* task2 = task_create("task2", scheduler_demo_task2, 1);
-    task_struct_t* task3 = task_create("task3", scheduler_demo_task3, 1);
-    scheduler_demo_blocked_task = task3;
+    task_struct_t* producer = task_create("producer", channel_producer_task, 1);
+    task_struct_t* consumer = task_create("consumer", channel_consumer_task, 1);
+    task_struct_t* heartbeat = task_create("heartbeat", channel_heartbeat_task, 1);
     
-    if (task1 && task2 && task3) {
+    if (producer && consumer && heartbeat) {
         console_puts("[SCHEDULER] Created 3 tasks successfully\n");
         
         // 태스크 정보 출력
         console_puts("\n[SCHEDULER] Task information:\n");
         task_print_info(scheduler_get_current_task());
-        task_print_info(task1);
-        task_print_info(task2);
-        task_print_info(task3);
+        task_print_info(producer);
+        task_print_info(consumer);
+        task_print_info(heartbeat);
         
         // 스케줄러에 추가
         console_puts("\n[SCHEDULER] Adding tasks to scheduler...\n");
-        scheduler_add_task(task1);
-        scheduler_add_task(task2);
-        scheduler_add_task(task3);
+        scheduler_add_task(producer);
+        scheduler_add_task(consumer);
+        scheduler_add_task(heartbeat);
         
         // 스케줄러 상태 출력
         console_puts("\n");
         scheduler_print_status();
         
         console_puts("\n[SCHEDULER] Tasks are ready. Enabling timer IRQ0...\n");
-        console_puts("[SCHEDULER] Output should show yielding, sleeping, and unblocked tasks.\n");
+        console_puts("[CHANNEL] Output should show send(S), receive(Rn), ack(A), and heartbeat(.).\n");
 
         idt_enable_interrupts();
         kernel_idle_loop();
