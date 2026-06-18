@@ -17,12 +17,20 @@ struct interrupt_frame {
 // 라운드 로빈 큐
 static task_struct_t* ready_queue_head = NULL;
 static task_struct_t* ready_queue_tail = NULL;
+static task_struct_t* sleep_queue_head = NULL;
+static task_struct_t* sleep_queue_tail = NULL;
 static task_struct_t* terminated_queue_head = NULL;
 static task_struct_t* terminated_queue_tail = NULL;
 static task_struct_t* current_task = NULL;
 static uint32_t total_tasks = 0;
+static uint32_t sleeping_tasks = 0;
+static uint32_t blocked_tasks = 0;
 static uint32_t terminated_tasks = 0;
 static uint32_t scheduler_ticks = 0;
+
+static bool scheduler_tick_reached(uint32_t now, uint32_t target) {
+    return (int32_t)(now - target) >= 0;
+}
 
 static void scheduler_enqueue_task(task_struct_t* task) {
     task->next = NULL;
@@ -59,6 +67,69 @@ static task_struct_t* scheduler_dequeue_task(void) {
     }
 
     return task;
+}
+
+static void scheduler_enqueue_sleeping_task(task_struct_t* task) {
+    if (!task || task->pid == 0 || task->waiting_for_timer) {
+        return;
+    }
+
+    task->next = NULL;
+    task->prev = sleep_queue_tail;
+    task->waiting_for_timer = true;
+
+    if (sleep_queue_tail) {
+        sleep_queue_tail->next = task;
+    } else {
+        sleep_queue_head = task;
+    }
+
+    sleep_queue_tail = task;
+    sleeping_tasks++;
+}
+
+static void scheduler_remove_sleeping_task(task_struct_t* task) {
+    if (!task || !task->waiting_for_timer) {
+        return;
+    }
+
+    if (task->prev) {
+        task->prev->next = task->next;
+    } else {
+        sleep_queue_head = task->next;
+    }
+
+    if (task->next) {
+        task->next->prev = task->prev;
+    } else {
+        sleep_queue_tail = task->prev;
+    }
+
+    task->next = NULL;
+    task->prev = NULL;
+    task->waiting_for_timer = false;
+    task->wake_tick = 0;
+
+    if (sleeping_tasks > 0) {
+        sleeping_tasks--;
+    }
+}
+
+static void scheduler_wake_sleeping_tasks(void) {
+    task_struct_t* task = sleep_queue_head;
+
+    while (task) {
+        task_struct_t* next = task->next;
+
+        if (scheduler_tick_reached(scheduler_ticks, task->wake_tick)) {
+            scheduler_remove_sleeping_task(task);
+            task->state = TASK_READY;
+            task->time_remaining = task->time_slice;
+            scheduler_enqueue_task(task);
+        }
+
+        task = next;
+    }
 }
 
 static void scheduler_enqueue_terminated_task(task_struct_t* task) {
@@ -107,9 +178,13 @@ void scheduler_init(void) {
     
     ready_queue_head = NULL;
     ready_queue_tail = NULL;
+    sleep_queue_head = NULL;
+    sleep_queue_tail = NULL;
     terminated_queue_head = NULL;
     terminated_queue_tail = NULL;
     total_tasks = 0;
+    sleeping_tasks = 0;
+    blocked_tasks = 0;
     terminated_tasks = 0;
     scheduler_ticks = 0;
     
@@ -202,6 +277,73 @@ uint32_t scheduler_get_total_tasks(void) {
     return total_tasks;
 }
 
+uint32_t scheduler_get_ticks(void) {
+    return scheduler_ticks;
+}
+
+void scheduler_yield_current_task(void) {
+    idt_disable_interrupts();
+
+    if (current_task && current_task->pid != 0 && current_task->state == TASK_RUNNING) {
+        current_task->time_remaining = 0;
+    }
+
+    idt_enable_interrupts();
+}
+
+void scheduler_sleep_current_task(uint32_t ticks) {
+    if (ticks == 0) {
+        scheduler_yield_current_task();
+        return;
+    }
+
+    idt_disable_interrupts();
+
+    if (current_task && current_task->pid != 0 && current_task->state == TASK_RUNNING) {
+        current_task->state = TASK_BLOCKED;
+        current_task->wake_tick = scheduler_ticks + ticks;
+        current_task->time_remaining = 0;
+        scheduler_enqueue_sleeping_task(current_task);
+    }
+
+    idt_enable_interrupts();
+}
+
+void scheduler_block_current_task(void) {
+    idt_disable_interrupts();
+
+    if (current_task && current_task->pid != 0 && current_task->state == TASK_RUNNING) {
+        current_task->state = TASK_BLOCKED;
+        current_task->wake_tick = 0;
+        current_task->time_remaining = 0;
+        blocked_tasks++;
+    }
+
+    idt_enable_interrupts();
+}
+
+void scheduler_unblock_task(task_struct_t* task) {
+    if (!task || task->pid == 0) {
+        return;
+    }
+
+    idt_disable_interrupts();
+
+    if (task->state == TASK_BLOCKED) {
+        if (task->waiting_for_timer) {
+            scheduler_remove_sleeping_task(task);
+        } else if (blocked_tasks > 0) {
+            blocked_tasks--;
+        }
+
+        task->state = TASK_READY;
+        task->time_remaining = task->time_slice;
+        scheduler_enqueue_task(task);
+    }
+
+    idt_enable_interrupts();
+}
+
 void scheduler_reap_terminated_tasks(void) {
     for (;;) {
         idt_disable_interrupts();
@@ -270,6 +412,34 @@ void scheduler_print_status(void) {
     }
     console_puts("\n");
 
+    console_puts("  Sleeping tasks: ");
+    count = sleeping_tasks;
+    idx = 0;
+    if (count == 0) {
+        console_putc('0');
+    } else {
+        while (count > 0 && idx < 11) {
+            buf[idx++] = (char)('0' + (count % 10));
+            count /= 10;
+        }
+        while (idx--) console_putc(buf[idx]);
+    }
+    console_puts("\n");
+
+    console_puts("  Blocked tasks: ");
+    count = blocked_tasks;
+    idx = 0;
+    if (count == 0) {
+        console_putc('0');
+    } else {
+        while (count > 0 && idx < 11) {
+            buf[idx++] = (char)('0' + (count % 10));
+            count /= 10;
+        }
+        while (idx--) console_putc(buf[idx]);
+    }
+    console_puts("\n");
+
     console_puts("  Terminated tasks pending cleanup: ");
     count = terminated_tasks;
     idx = 0;
@@ -326,7 +496,13 @@ uint32_t scheduler_irq_handler(void* frame_ptr) {
     }
     
     // 타임 슬라이스 감소
-    if (current_task->time_remaining > 0) {
+    scheduler_wake_sleeping_tasks();
+
+    if (current_task->pid == 0 && ready_queue_head) {
+        current_task->time_remaining = 0;
+    }
+
+    if (current_task->state == TASK_RUNNING && current_task->time_remaining > 0) {
         current_task->time_remaining--;
     }
     

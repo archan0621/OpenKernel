@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define SCHEDULER_TIMER_HZ 100u
+
 // 스케줄러 초기화
 void scheduler_init(void);
 
@@ -26,6 +28,11 @@ void scheduler_remove_task(task_struct_t* task);
 
 // 스케줄러 통계
 uint32_t scheduler_get_total_tasks(void);
+uint32_t scheduler_get_ticks(void);
+void scheduler_yield_current_task(void);
+void scheduler_sleep_current_task(uint32_t ticks);
+void scheduler_block_current_task(void);
+void scheduler_unblock_task(task_struct_t* task);
 void scheduler_print_status(void);
 void scheduler_reap_terminated_tasks(void);
 

@@ -25,6 +25,8 @@ typedef struct task_struct {
     uint32_t priority;              // 우선순위 (0이 가장 높음)
     uint32_t time_slice;            // 타임 슬라이스 (틱 수)
     uint32_t time_remaining;        // 남은 타임 슬라이스
+    uint32_t wake_tick;             // sleep 해제 tick
+    bool waiting_for_timer;         // timer sleep queue에 있는지 여부
     
     struct task_struct* next;       // 다음 태스크 (링크드 리스트)
     struct task_struct* prev;       // 이전 태스크
@@ -38,6 +40,11 @@ void task_init(void);
 task_struct_t* task_create(const char* name, void (*entry_point)(void), uint32_t priority);
 void task_destroy(task_struct_t* task);
 void task_exit(void) __attribute__((noreturn));
+void task_yield(void);
+void task_sleep_ticks(uint32_t ticks);
+void task_sleep_ms(uint32_t ms);
+void task_block(void);
+void task_unblock(task_struct_t* task);
 task_struct_t* task_get_current(void);
 void task_set_current(task_struct_t* task);
 uint32_t task_get_next_pid(void);

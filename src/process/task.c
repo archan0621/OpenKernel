@@ -1,4 +1,5 @@
 #include "process/task.h"
+#include "process/scheduler.h"
 #include "mem/kmalloc.h"
 #include "mem/vmm.h"
 #include "drivers/console/console.h"
@@ -10,11 +11,22 @@ static uint32_t next_pid = 1;
 // 커널 태스크 (idle task)
 static task_struct_t kernel_task;
 
-// current_task는 scheduler.c에서 관리
-extern task_struct_t* scheduler_get_current_task(void);
-extern void scheduler_set_current_task(task_struct_t* task);
-
 static void task_entry_trampoline(void) __attribute__((noreturn));
+
+static void task_wait_until_running(void) {
+    task_struct_t* task = scheduler_get_current_task();
+    if (!task || task->pid == 0) {
+        return;
+    }
+
+    for (;;) {
+        __asm__ __volatile__("sti; hlt");
+
+        if (scheduler_get_current_task() == task && task->state == TASK_RUNNING) {
+            return;
+        }
+    }
+}
 
 static void task_entry_trampoline(void) {
     task_struct_t* current = scheduler_get_current_task();
@@ -49,6 +61,8 @@ void task_init(void) {
     kernel_task.priority = 0;
     kernel_task.time_slice = 10;
     kernel_task.time_remaining = 10;
+    kernel_task.wake_tick = 0;
+    kernel_task.waiting_for_timer = false;
     kernel_task.next = NULL;
     kernel_task.prev = NULL;
     kernel_task.creation_time = 0;
@@ -61,6 +75,48 @@ void task_init(void) {
 
 uint32_t task_get_next_pid(void) {
     return next_pid++;
+}
+
+void task_yield(void) {
+    scheduler_yield_current_task();
+    task_wait_until_running();
+}
+
+void task_sleep_ticks(uint32_t ticks) {
+    if (ticks == 0) {
+        task_yield();
+        return;
+    }
+
+    scheduler_sleep_current_task(ticks);
+    task_wait_until_running();
+}
+
+void task_sleep_ms(uint32_t ms) {
+    if (ms == 0) {
+        task_yield();
+        return;
+    }
+
+    uint32_t seconds = ms / 1000;
+    uint32_t remainder = ms % 1000;
+    uint32_t ticks = seconds * SCHEDULER_TIMER_HZ;
+    ticks += (remainder * SCHEDULER_TIMER_HZ + 999) / 1000;
+
+    if (ticks == 0) {
+        ticks = 1;
+    }
+
+    task_sleep_ticks(ticks);
+}
+
+void task_block(void) {
+    scheduler_block_current_task();
+    task_wait_until_running();
+}
+
+void task_unblock(task_struct_t* task) {
+    scheduler_unblock_task(task);
 }
 
 void task_exit(void) {
@@ -99,6 +155,8 @@ task_struct_t* task_create(const char* name, void (*entry_point)(void), uint32_t
     task->priority = priority;
     task->time_slice = 10;  // 기본 타임 슬라이스
     task->time_remaining = task->time_slice;
+    task->wake_tick = 0;
+    task->waiting_for_timer = false;
     task->creation_time = 0;  // TODO: 타이머 구현 후 실제 시간 설정
     task->cpu_time = 0;
     task->entry_point = entry_point;
@@ -233,11 +291,6 @@ void task_set_state(task_struct_t* task, task_state_t state) {
 task_state_t task_get_state(task_struct_t* task) {
     return task ? task->state : TASK_TERMINATED;
 }
-
-// Ready queue 관리는 scheduler.c로 이동
-// 이 함수들은 scheduler 함수를 호출하도록 변경
-extern void scheduler_add_task(task_struct_t* task);
-extern void scheduler_remove_task(task_struct_t* task);
 
 void task_add_to_ready_queue(task_struct_t* task) {
     scheduler_add_task(task);
