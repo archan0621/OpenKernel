@@ -11,6 +11,8 @@
 
 #define MB2_MAGIC 0x36d76289
 
+static task_struct_t* scheduler_demo_blocked_task = 0;
+
 static void hlt_loop(void) {
     for(;;) __asm__ __volatile__("hlt");
 }
@@ -41,30 +43,40 @@ static void console_putu32(uint32_t v) {
     }
 }
 
-static void scheduler_demo_delay(void) {
-    for (volatile uint32_t i = 0; i < 3000000; i++) {
-        __asm__ __volatile__("" : : : "memory");
-    }
-}
-
 static void scheduler_demo_task1(void) {
     for (;;) {
         console_putc('1');
-        scheduler_demo_delay();
+
+        if (scheduler_demo_blocked_task &&
+            task_get_state(scheduler_demo_blocked_task) == TASK_BLOCKED &&
+            !scheduler_demo_blocked_task->waiting_for_timer) {
+            task_unblock(scheduler_demo_blocked_task);
+        }
+
+        task_sleep_ticks(20);
     }
 }
 
 static void scheduler_demo_task2(void) {
     for (;;) {
         console_putc('2');
-        scheduler_demo_delay();
+        task_sleep_ms(350);
     }
 }
 
 static void scheduler_demo_task3(void) {
+    uint32_t loops = 0;
+
     for (;;) {
         console_putc('3');
-        scheduler_demo_delay();
+        loops++;
+
+        if ((loops % 4) == 0) {
+            task_block();
+        }
+
+        task_yield();
+        task_sleep_ticks(50);
     }
 }
 
@@ -261,6 +273,7 @@ void kernel_main(uint32_t magic, void* mbinfo) {
     task_struct_t* task1 = task_create("task1", scheduler_demo_task1, 1);
     task_struct_t* task2 = task_create("task2", scheduler_demo_task2, 1);
     task_struct_t* task3 = task_create("task3", scheduler_demo_task3, 1);
+    scheduler_demo_blocked_task = task3;
     
     if (task1 && task2 && task3) {
         console_puts("[SCHEDULER] Created 3 tasks successfully\n");
@@ -283,7 +296,7 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         scheduler_print_status();
         
         console_puts("\n[SCHEDULER] Tasks are ready. Enabling timer IRQ0...\n");
-        console_puts("[SCHEDULER] Output should cycle through 1, 2, and 3.\n");
+        console_puts("[SCHEDULER] Output should show yielding, sleeping, and unblocked tasks.\n");
 
         idt_enable_interrupts();
         kernel_idle_loop();
