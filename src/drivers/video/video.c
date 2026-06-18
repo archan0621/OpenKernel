@@ -73,8 +73,8 @@ void video_draw_char(int cx, int cy, char c) {
         if (!g_fb || g_fb->framebuffer_bpp != 32)
             return;
 
-        // Check character range
-        if (c < FONT8X16_FIRST || c > FONT8X16_LAST)
+        uint32_t glyph = (uint8_t)c;
+        if (glyph >= FONT8X16_COUNT)
             return;
 
         uint32_t width  = g_fb->framebuffer_width;
@@ -92,7 +92,7 @@ void video_draw_char(int cx, int cy, char c) {
             return;
 
         // Get font data
-        const uint8_t* font_data = font8x16[c - FONT8X16_FIRST];
+        const uint8_t* font_data = font8x16[glyph - FONT8X16_FIRST];
         uint32_t color = 0xFFFFFFFF; // white
 
         // Draw font
@@ -134,7 +134,6 @@ void video_scroll_up(void) {
         uint32_t pitch  = g_fb->framebuffer_pitch;
         uint32_t* buffer = (uint32_t*)(uintptr_t)g_fb->framebuffer_addr;
         uint32_t line_height = FONT8X16_HEIGHT;
-        uint32_t chars_per_line = width / FONT8X16_WIDTH;
         uint32_t lines_per_screen = height / line_height;
 
         // Copy lines 1 to (lines_per_screen-1) to lines 0 to (lines_per_screen-2)

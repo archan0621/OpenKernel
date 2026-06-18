@@ -257,7 +257,6 @@ void vmm_init(void) {
     console_puts("[VMM] Creating identity mapping for first 16MB...\n");
     
     uint32_t identity_pages = 4096; // 16MB / 4KB = 4096 pages
-    uint32_t mapped_count = 0;
     uint32_t failed_count = 0;
     
     for (uint32_t i = 0; i < identity_pages; i++) {
@@ -273,8 +272,6 @@ void vmm_init(void) {
         
         if (!vmm_map_page(page_dir, virt_addr, phys_addr, flags)) {
             failed_count++;
-        } else {
-            mapped_count++;
         }
     }
     

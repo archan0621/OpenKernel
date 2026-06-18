@@ -175,9 +175,6 @@ void* kmalloc(size_t size) {
         block_header_t* current = heap_start;
         while (current) {
             if (current->is_free && current->size >= size) {
-                // 적합한 블록 발견
-                size_t old_free_size = current->size;
-                
                 // 블록 분할 (가능하면)
                 split_block(current, size);
                 // 분할 후 current->size는 size로 변경됨
@@ -186,7 +183,6 @@ void* kmalloc(size_t size) {
                 current->is_free = false;
                 
                 // free_bytes 업데이트:
-                // - 원래 free였던 old_free_size에서
                 // - 실제 사용하는 current->size를 뺌
                 // - 분할로 생긴 남는 블록은 여전히 free이므로 자동으로 반영됨
                 used_bytes += current->size;

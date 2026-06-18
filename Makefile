@@ -9,7 +9,8 @@ QEMU = qemu-system-i386
 
 # Flags
 NASMFLAGS = -f elf32
-CFLAGS = -m32 -ffreestanding -O2 -Iinclude -mno-sse -mno-sse2 -mno-mmx
+WARNFLAGS = -Wall -Wextra
+CFLAGS = -m32 -ffreestanding -O2 -Iinclude -mno-sse -mno-sse2 -mno-mmx $(WARNFLAGS)
 LDFLAGS = -m elf_i386 -T linker.ld
 
 # Directories
