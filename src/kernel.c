@@ -67,7 +67,7 @@ static void channel_producer_task(void) {
 
             channel_message_t ack;
             if (channel_recv(ipc_ack_channel, &ack)) {
-                console_putc('A');
+                console_putc('K');
             }
         } else {
             console_putc('!');
@@ -77,12 +77,12 @@ static void channel_producer_task(void) {
     }
 }
 
-static void channel_consumer_task(void) {
+static void channel_consumer_loop(char label) {
     for (;;) {
         channel_message_t request;
 
         if (channel_recv(ipc_request_channel, &request)) {
-            console_putc('R');
+            console_putc(label);
             console_putc((char)('0' + (request.value % 10)));
 
             channel_message_t ack = {
@@ -96,6 +96,14 @@ static void channel_consumer_task(void) {
             task_yield();
         }
     }
+}
+
+static void channel_consumer_a_task(void) {
+    channel_consumer_loop('a');
+}
+
+static void channel_consumer_b_task(void) {
+    channel_consumer_loop('b');
 }
 
 static void channel_heartbeat_task(void) {
@@ -314,23 +322,26 @@ void kernel_main(uint32_t magic, void* mbinfo) {
     console_puts("[CHANNEL] Starting producer/consumer IPC demo...\n");
     
     task_struct_t* producer = task_create("producer", channel_producer_task, 1);
-    task_struct_t* consumer = task_create("consumer", channel_consumer_task, 1);
+    task_struct_t* consumer_a = task_create("consumerA", channel_consumer_a_task, 1);
+    task_struct_t* consumer_b = task_create("consumerB", channel_consumer_b_task, 1);
     task_struct_t* heartbeat = task_create("heartbeat", channel_heartbeat_task, 1);
     
-    if (producer && consumer && heartbeat) {
-        console_puts("[SCHEDULER] Created 3 tasks successfully\n");
+    if (producer && consumer_a && consumer_b && heartbeat) {
+        console_puts("[SCHEDULER] Created 4 tasks successfully\n");
         
         // 태스크 정보 출력
         console_puts("\n[SCHEDULER] Task information:\n");
         task_print_info(scheduler_get_current_task());
         task_print_info(producer);
-        task_print_info(consumer);
+        task_print_info(consumer_a);
+        task_print_info(consumer_b);
         task_print_info(heartbeat);
         
         // 스케줄러에 추가
         console_puts("\n[SCHEDULER] Adding tasks to scheduler...\n");
         scheduler_add_task(producer);
-        scheduler_add_task(consumer);
+        scheduler_add_task(consumer_a);
+        scheduler_add_task(consumer_b);
         scheduler_add_task(heartbeat);
         
         // 스케줄러 상태 출력
@@ -338,7 +349,7 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         scheduler_print_status();
         
         console_puts("\n[SCHEDULER] Tasks are ready. Enabling timer IRQ0...\n");
-        console_puts("[CHANNEL] Output should show send(S), receive(Rn), ack(A), and heartbeat(.).\n");
+        console_puts("[CHANNEL] Output should show send(S), consumer(a/b), ack(K), and heartbeat(.).\n");
 
         idt_enable_interrupts();
         kernel_idle_loop();

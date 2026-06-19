@@ -11,7 +11,9 @@ struct channel {
     uint32_t head;
     uint32_t tail;
     uint32_t count;
-    task_struct_t* waiting_receiver;
+    task_struct_t* receiver_wait_head;
+    task_struct_t* receiver_wait_tail;
+    uint32_t receiver_wait_count;
     struct channel* next;
 };
 
@@ -66,6 +68,61 @@ static bool channel_dequeue(channel_t* channel, channel_message_t* out_message) 
     return true;
 }
 
+static bool channel_receiver_is_waiting(const channel_t* channel, const task_struct_t* task) {
+    task_struct_t* current = channel->receiver_wait_head;
+
+    while (current) {
+        if (current == task) {
+            return true;
+        }
+
+        current = current->next;
+    }
+
+    return false;
+}
+
+static void channel_enqueue_receiver(channel_t* channel, task_struct_t* task) {
+    if (channel_receiver_is_waiting(channel, task)) {
+        return;
+    }
+
+    task->next = NULL;
+    task->prev = channel->receiver_wait_tail;
+
+    if (channel->receiver_wait_tail) {
+        channel->receiver_wait_tail->next = task;
+    } else {
+        channel->receiver_wait_head = task;
+    }
+
+    channel->receiver_wait_tail = task;
+    channel->receiver_wait_count++;
+}
+
+static task_struct_t* channel_dequeue_receiver(channel_t* channel) {
+    task_struct_t* task = channel->receiver_wait_head;
+    if (!task) {
+        return NULL;
+    }
+
+    channel->receiver_wait_head = task->next;
+    if (channel->receiver_wait_head) {
+        channel->receiver_wait_head->prev = NULL;
+    } else {
+        channel->receiver_wait_tail = NULL;
+    }
+
+    task->next = NULL;
+    task->prev = NULL;
+
+    if (channel->receiver_wait_count > 0) {
+        channel->receiver_wait_count--;
+    }
+
+    return task;
+}
+
 void channel_init(void) {
     channel_list = NULL;
     next_channel_id = 1;
@@ -83,7 +140,9 @@ channel_t* channel_create(void) {
     channel->head = 0;
     channel->tail = 0;
     channel->count = 0;
-    channel->waiting_receiver = NULL;
+    channel->receiver_wait_head = NULL;
+    channel->receiver_wait_tail = NULL;
+    channel->receiver_wait_count = 0;
 
     bool interrupts_enabled = channel_interrupts_enabled();
     idt_disable_interrupts();
@@ -106,9 +165,8 @@ bool channel_send(channel_t* channel, const channel_message_t* message) {
     bool sent = channel_enqueue(channel, message);
     task_struct_t* receiver = NULL;
 
-    if (sent && channel->waiting_receiver) {
-        receiver = channel->waiting_receiver;
-        channel->waiting_receiver = NULL;
+    if (sent) {
+        receiver = channel_dequeue_receiver(channel);
     }
 
     channel_restore_interrupts(interrupts_enabled);
@@ -139,13 +197,7 @@ bool channel_recv(channel_t* channel, channel_message_t* out_message) {
             return true;
         }
 
-        if (channel->waiting_receiver && channel->waiting_receiver != current) {
-            channel_restore_interrupts(interrupts_enabled);
-            task_yield();
-            continue;
-        }
-
-        channel->waiting_receiver = current;
+        channel_enqueue_receiver(channel, current);
         scheduler_block_current_task();
 
         channel_wait_until_running(current);
@@ -164,6 +216,10 @@ uint32_t channel_get_count(const channel_t* channel) {
     return channel ? channel->count : 0;
 }
 
-task_struct_t* channel_get_waiting_receiver(const channel_t* channel) {
-    return channel ? channel->waiting_receiver : NULL;
+uint32_t channel_get_waiting_receiver_count(const channel_t* channel) {
+    return channel ? channel->receiver_wait_count : 0;
+}
+
+task_struct_t* channel_peek_waiting_receiver(const channel_t* channel) {
+    return channel ? channel->receiver_wait_head : NULL;
 }
