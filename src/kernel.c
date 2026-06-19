@@ -11,9 +11,9 @@
 #include "arch/x86/idt.h"
 
 #define MB2_MAGIC 0x36d76289
+#define CHANNEL_BURST_MESSAGES (CHANNEL_QUEUE_CAPACITY + 4u)
 
 static channel_t* ipc_request_channel = 0;
-static channel_t* ipc_ack_channel = 0;
 
 static void hlt_loop(void) {
     for(;;) __asm__ __volatile__("hlt");
@@ -54,26 +54,27 @@ static void channel_producer_task(void) {
     uint32_t value = 0;
 
     for (;;) {
-        value++;
+        for (uint32_t i = 0; i < CHANNEL_BURST_MESSAGES; i++) {
+            value++;
 
-        channel_message_t request = {
-            .type = 1,
-            .sender_pid = current_task_pid(),
-            .value = value,
-        };
+            channel_message_t request = {
+                .type = 1,
+                .sender_pid = current_task_pid(),
+                .value = value,
+            };
 
-        if (channel_send(ipc_request_channel, &request)) {
-            console_putc('S');
-
-            channel_message_t ack;
-            if (channel_recv(ipc_ack_channel, &ack)) {
-                console_putc('K');
+            if (channel_get_count(ipc_request_channel) >= CHANNEL_QUEUE_CAPACITY) {
+                console_putc('W');
             }
-        } else {
-            console_putc('!');
+
+            if (channel_send(ipc_request_channel, &request)) {
+                console_putc('S');
+            } else {
+                console_putc('!');
+            }
         }
 
-        task_sleep_ticks(25);
+        task_sleep_ticks(80);
     }
 }
 
@@ -84,14 +85,7 @@ static void channel_consumer_loop(char label) {
         if (channel_recv(ipc_request_channel, &request)) {
             console_putc(label);
             console_putc((char)('0' + (request.value % 10)));
-
-            channel_message_t ack = {
-                .type = 2,
-                .sender_pid = current_task_pid(),
-                .value = request.value,
-            };
-
-            channel_send(ipc_ack_channel, &ack);
+            task_sleep_ticks(12);
         } else {
             task_yield();
         }
@@ -305,21 +299,17 @@ void kernel_main(uint32_t magic, void* mbinfo) {
     channel_init();
 
     ipc_request_channel = channel_create();
-    ipc_ack_channel = channel_create();
-
-    if (!ipc_request_channel || !ipc_ack_channel) {
+    if (!ipc_request_channel) {
         console_puts("[CHANNEL] Failed to create IPC demo channels\n");
         hlt_loop();
     }
 
     console_puts("[CHANNEL] Created request channel #");
     console_putu32(channel_get_id(ipc_request_channel));
-    console_puts(" and ack channel #");
-    console_putu32(channel_get_id(ipc_ack_channel));
     console_puts("\n");
     
     // Test: Task scheduling and local Channel IPC
-    console_puts("[CHANNEL] Starting producer/consumer IPC demo...\n");
+    console_puts("[CHANNEL] Starting producer/consumer backpressure demo...\n");
     
     task_struct_t* producer = task_create("producer", channel_producer_task, 1);
     task_struct_t* consumer_a = task_create("consumerA", channel_consumer_a_task, 1);
@@ -349,7 +339,7 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         scheduler_print_status();
         
         console_puts("\n[SCHEDULER] Tasks are ready. Enabling timer IRQ0...\n");
-        console_puts("[CHANNEL] Output should show send(S), consumer(a/b), ack(K), and heartbeat(.).\n");
+        console_puts("[CHANNEL] Output should show send(S), wait(W), consumer(a/b), and heartbeat(.).\n");
 
         idt_enable_interrupts();
         kernel_idle_loop();
