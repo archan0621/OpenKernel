@@ -63,14 +63,16 @@ static void channel_producer_task(void) {
                 .value = value,
             };
 
-            if (channel_get_count(ipc_request_channel) >= CHANNEL_QUEUE_CAPACITY) {
-                console_putc('W');
-            }
-
-            if (channel_send(ipc_request_channel, &request)) {
+            if (channel_try_send(ipc_request_channel, &request)) {
                 console_putc('S');
             } else {
-                console_putc('!');
+                console_putc('F');
+
+                if (channel_send(ipc_request_channel, &request)) {
+                    console_putc('S');
+                } else {
+                    console_putc('!');
+                }
             }
         }
 
@@ -82,13 +84,18 @@ static void channel_consumer_loop(char label) {
     for (;;) {
         channel_message_t request;
 
-        if (channel_recv(ipc_request_channel, &request)) {
-            console_putc(label);
-            console_putc((char)('0' + (request.value % 10)));
-            task_sleep_ticks(12);
-        } else {
-            task_yield();
+        if (!channel_try_recv(ipc_request_channel, &request)) {
+            console_putc('E');
+
+            if (!channel_recv(ipc_request_channel, &request)) {
+                task_yield();
+                continue;
+            }
         }
+
+        console_putc(label);
+        console_putc((char)('0' + (request.value % 10)));
+        task_sleep_ticks(12);
     }
 }
 
@@ -329,9 +336,9 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         
         // 스케줄러에 추가
         console_puts("\n[SCHEDULER] Adding tasks to scheduler...\n");
-        scheduler_add_task(producer);
         scheduler_add_task(consumer_a);
         scheduler_add_task(consumer_b);
+        scheduler_add_task(producer);
         scheduler_add_task(heartbeat);
         
         // 스케줄러 상태 출력
@@ -339,7 +346,7 @@ void kernel_main(uint32_t magic, void* mbinfo) {
         scheduler_print_status();
         
         console_puts("\n[SCHEDULER] Tasks are ready. Enabling timer IRQ0...\n");
-        console_puts("[CHANNEL] Output should show send(S), wait(W), consumer(a/b), and heartbeat(.).\n");
+        console_puts("[CHANNEL] Output should show try empty(E), try full(F), send(S), consumer(a/b), and heartbeat(.).\n");
 
         idt_enable_interrupts();
         kernel_idle_loop();

@@ -18,6 +18,8 @@ void channel_init(void);
 channel_t* channel_create(void);
 bool channel_send(channel_t* channel, const channel_message_t* message);
 bool channel_recv(channel_t* channel, channel_message_t* out_message);
+bool channel_try_send(channel_t* channel, const channel_message_t* message);
+bool channel_try_recv(channel_t* channel, channel_message_t* out_message);
 uint32_t channel_get_id(const channel_t* channel);
 uint32_t channel_get_owner_pid(const channel_t* channel);
 uint32_t channel_get_count(const channel_t* channel);

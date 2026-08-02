@@ -199,6 +199,26 @@ bool channel_send(channel_t* channel, const channel_message_t* message) {
     }
 }
 
+bool channel_try_send(channel_t* channel, const channel_message_t* message) {
+    if (!channel || !message) {
+        return false;
+    }
+
+    bool interrupts_enabled = channel_interrupts_enabled();
+    idt_disable_interrupts();
+
+    bool sent = channel_enqueue(channel, message);
+    task_struct_t* receiver = sent ? channel_wait_queue_pop(&channel->receiver_wait_queue) : NULL;
+
+    channel_restore_interrupts(interrupts_enabled);
+
+    if (receiver) {
+        task_unblock(receiver);
+    }
+
+    return sent;
+}
+
 bool channel_recv(channel_t* channel, channel_message_t* out_message) {
     if (!channel || !out_message) {
         return false;
@@ -230,6 +250,26 @@ bool channel_recv(channel_t* channel, channel_message_t* out_message) {
 
         channel_wait_until_running(current);
     }
+}
+
+bool channel_try_recv(channel_t* channel, channel_message_t* out_message) {
+    if (!channel || !out_message) {
+        return false;
+    }
+
+    bool interrupts_enabled = channel_interrupts_enabled();
+    idt_disable_interrupts();
+
+    bool received = channel_dequeue(channel, out_message);
+    task_struct_t* sender = received ? channel_wait_queue_pop(&channel->sender_wait_queue) : NULL;
+
+    channel_restore_interrupts(interrupts_enabled);
+
+    if (sender) {
+        task_unblock(sender);
+    }
+
+    return received;
 }
 
 uint32_t channel_get_id(const channel_t* channel) {
